@@ -6,6 +6,7 @@ Summary:        GnuPG 2
 Url:            http://www.gnupg.org/aegypten2/
 Group:          Security/Certificate Management
 Source:         gnupg-%{version}.tar.bz2
+Source1001: 	gpg2.manifest
 BuildRequires:  automake
 BuildRequires:  expect
 BuildRequires:  fdupes
@@ -32,6 +33,7 @@ gpg-agent, and a keybox library.
 
 %prep
 %setup  -q -n gnupg-%{version}
+cp %{SOURCE1001} .
 
 %build
 autoreconf -fi
@@ -79,6 +81,7 @@ rm -rf %{buildroot}/%{_datadir}/locale/en@{bold,}quot
 
 
 %files -f gnupg2.lang
+%manifest %{name}.manifest
 %defattr(-,root,root)
 %license COPYING.LIB COPYING
 %doc %{_infodir}/gnupg*
