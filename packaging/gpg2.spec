@@ -19,6 +19,7 @@ BuildRequires:  libgpg-error-devel >= 1.7
 BuildRequires:  libksba-devel >= 1.0.7
 BuildRequires:  libpth-devel >= 1.3.7
 BuildRequires:  readline-devel
+BuildRequires:  pkgconfig
 BuildRequires:  pkgconfig(libusb-1.0)
 BuildRequires:  pkgconfig(zlib)
 Provides:       gnupg = %{version}
@@ -41,7 +42,7 @@ cp %{SOURCE1001} .
 PIE="-fpie"
 export CFLAGS="%{optflags} ${PIE}"
 export LDFLAGS=-pie
-%configure \
+%reconfigure \
     --libexecdir=%{_libdir} \
     --docdir=%{_docdir}/%{name} \
     --with-agent-pgm=%{_bindir}/gpg-agent \
@@ -91,5 +92,4 @@ rm -rf %{buildroot}/%{_datadir}/locale/en@{bold,}quot
 %{_sbindir}/addgnupghome
 %{_sbindir}/applygnupgdefaults
 %{_datadir}/gnupg
-%dir %{_sysconfdir}/gnupg
 %config(noreplace) %{_sysconfdir}/gnupg/gpgconf.conf
