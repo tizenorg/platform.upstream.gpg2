@@ -6,7 +6,7 @@ Summary:        GnuPG 2
 Url:            http://www.gnupg.org/aegypten2/
 Group:          Security/Certificate Management
 Source:         gnupg-%{version}.tar.bz2
-Source1001: 	gpg2.manifest
+Source1001:     gpg2.manifest
 BuildRequires:  automake
 BuildRequires:  expect
 BuildRequires:  fdupes
@@ -36,12 +36,11 @@ gpg-agent, and a keybox library.
 cp %{SOURCE1001} .
 
 %build
-autoreconf -fi
 # build PIEs (position independent executables) for address space randomisation:
 PIE="-fpie"
 export CFLAGS="%{optflags} ${PIE}"
 export LDFLAGS=-pie
-%configure \
+%reconfigure \
     --libexecdir=%{_libdir} \
     --docdir=%{_docdir}/%{name} \
     --with-agent-pgm=%{_bindir}/gpg-agent \
@@ -50,11 +49,11 @@ export LDFLAGS=-pie
     --enable-gpg \
     --with-gnu-ld
 
-make %{?_smp_mflags}
+%__make %{?_smp_mflags}
 
 %check
 %if ! 0%{?qemu_user_space_build}
-make check
+%__make check
 %{buildroot}%{_bindir}/gpgsplit -v -p pubsplit-                    --uncompress <tests/openpgp/pubring.gpg
 %{buildroot}%{_bindir}/gpgsplit -v -p secsplit- --secret-to-public --uncompress <tests/openpgp/secring.gpg
 %endif
@@ -79,7 +78,6 @@ rm -rf %{buildroot}/%{_datadir}/locale/en@{bold,}quot
 %fdupes %{buildroot}
 
 
-
 %files -f gnupg2.lang
 %manifest %{name}.manifest
 %defattr(-,root,root)
@@ -92,6 +90,4 @@ rm -rf %{buildroot}/%{_datadir}/locale/en@{bold,}quot
 %{_sbindir}/addgnupghome
 %{_sbindir}/applygnupgdefaults
 %{_datadir}/gnupg
-%dir %{_sysconfdir}/gnupg
 %config(noreplace) %{_sysconfdir}/gnupg/gpgconf.conf
-
