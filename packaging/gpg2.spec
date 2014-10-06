@@ -7,6 +7,7 @@ Url:            http://www.gnupg.org/aegypten2/
 Group:          Security/Certificate Management
 Source:         gnupg-%{version}.tar.bz2
 Source1001:     gpg2.manifest
+
 BuildRequires:  automake
 BuildRequires:  expect
 BuildRequires:  fdupes
@@ -42,6 +43,7 @@ cp %{SOURCE1001} .
 PIE="-fpie"
 export CFLAGS="%{optflags} ${PIE}"
 export LDFLAGS=-pie
+
 %reconfigure \
     --libexecdir=%{_libdir} \
     --docdir=%{_docdir}/%{name} \
@@ -49,16 +51,10 @@ export LDFLAGS=-pie
     --with-scdaemon-pgm=%{_bindir}/scdaemon \
     --enable-gpgsm=yes \
     --enable-gpg \
-    --with-gnu-ld
+    --with-gnu-ld \
+    --disable-doc
 
 %__make %{?_smp_mflags}
-
-%check
-%if ! 0%{?qemu_user_space_build}
-%__make check
-%{buildroot}%{_bindir}/gpgsplit -v -p pubsplit-                    --uncompress <tests/openpgp/pubring.gpg
-%{buildroot}%{_bindir}/gpgsplit -v -p secsplit- --secret-to-public --uncompress <tests/openpgp/secring.gpg
-%endif
 
 %install
 %make_install
@@ -70,23 +66,19 @@ rm -rf %{buildroot}%{_datadir}/doc/packages/gpg2/examples/gpgconf.conf
 
 ln -sf gpg2 %{buildroot}%{_bindir}/gpg
 ln -sf gpgv2 %{buildroot}%{_bindir}/gpgv
-ln -sf gpg2.1 %{buildroot}%{_mandir}/man1/gpg.1
-ln -sf gpgv2.1 %{buildroot}%{_mandir}/man1/gpgv.1
 
 rm -rf %{buildroot}/%{_datadir}/locale/en@{bold,}quot
+rm -rf %{buildroot}/%{_datadir}/locale/en@{bold,}quot
+rm -fr %{buildroot}/%{_datadir}/doc
 
 %find_lang gnupg2
 
 %fdupes %{buildroot}
 
-
 %files -f gnupg2.lang
 %manifest %{name}.manifest
 %defattr(-,root,root)
 %license COPYING.LIB COPYING
-%doc %{_infodir}/gnupg*
-%doc %{_docdir}/%{name}
-%{_mandir}/man*/*
 %{_bindir}/*
 %{_libdir}/[^d]*
 %{_sbindir}/addgnupghome
