@@ -372,13 +372,16 @@ seconds.  The default is 1800 seconds.
 @opindex max-cache-ttl
 Set the maximum time a cache entry is valid to @var{n} seconds.  After
 this time a cache entry will be expired even if it has been accessed
-recently.  The default is 2 hours (7200 seconds).
+recently or has been set using @command{gpg-preset-passphrase}.  The
+default is 2 hours (7200 seconds).
 
 @item --max-cache-ttl-ssh @var{n}
 @opindex max-cache-ttl-ssh
-Set the maximum time a cache entry used for SSH keys is valid to @var{n}
-seconds.  After this time a cache entry will be expired even if it has
-been accessed recently.  The default is 2 hours (7200 seconds).
+Set the maximum time a cache entry used for SSH keys is valid to
+@var{n} seconds.  After this time a cache entry will be expired even
+if it has been accessed recently or has been set using
+@command{gpg-preset-passphrase}.  The default is 2 hours (7200
+seconds).
 
 @item --enforce-passphrase-constraints
 @opindex enforce-passphrase-constraints
@@ -448,6 +451,16 @@ command.
 Do not make use of the scdaemon tool.  This option has the effect of
 disabling the ability to do smartcard operations.  Note, that enabling
 this option at runtime does not kill an already forked scdaemon.
+
+@ifset gpgtwoone
+@item --disable-check-own-socket
+@opindex disable-check-own-socket
+@command{gpg-agent} employs a periodic self-test to detect a stolen
+socket.  This usually means a second instance of @command{gpg-agent}
+has taken over the socket and @command{gpg-agent} will then terminate
+itself.  This option may be used to disable this self-test for
+debugging purposes.
+@end ifset
 
 @item --use-standard-socket
 @itemx --no-use-standard-socket
@@ -695,14 +708,16 @@ Here is a list of supported signals:
 @item SIGHUP
 @cpindex SIGHUP
 This signal flushes all cached passphrases and if the program has been
-started with a configuration file, the configuration file is read again.
-Only certain options are honored: @code{quiet}, @code{verbose},
-@code{debug}, @code{debug-all}, @code{debug-level}, @code{no-grab},
-@code{pinentry-program}, @code{default-cache-ttl}, @code{max-cache-ttl},
-@code{ignore-cache-for-signing}, @code{allow-mark-trusted} and
-@code{disable-scdaemon}.  @code{scdaemon-program} is also supported but
-due to the current implementation, which calls the scdaemon only once,
-it is not of much use unless you manually kill the scdaemon.
+started with a configuration file, the configuration file is read
+again.  Only certain options are honored: @code{quiet},
+@code{verbose}, @code{debug}, @code{debug-all}, @code{debug-level},
+@code{no-grab}, @code{pinentry-program}, @code{default-cache-ttl},
+@code{max-cache-ttl}, @code{ignore-cache-for-signing},
+@code{allow-mark-trusted}, @code{disable-scdaemon}, and
+@code{disable-check-own-socket}.  @code{scdaemon-program} is also
+supported but due to the current implementation, which calls the
+scdaemon only once, it is not of much use unless you manually kill the
+scdaemon.
 
 
 @item SIGTERM
@@ -796,6 +811,14 @@ certificate is that it will be possible to use the same keypair for
 different protocols, thereby saving space on the token used to keep the
 secret keys.
 
+@ifset gpgtwoone
+The @command{gpg-agent} may send status messages during a command or when
+returning from a command to inform a client about the progress or result of an
+operation.  For example, the @var{INQUIRE_MAXLEN} status message may be sent
+during a server inquire to inform the client of the maximum usable length of
+the inquired data (which should not be exceeded).
+@end ifset
+
 @menu
 * Agent PKDECRYPT::       Decrypting a session key
 * Agent PKSIGN::          Signing a Hash
@@ -804,6 +827,10 @@ secret keys.
 * Agent EXPORT::          Exporting a Secret Key
 * Agent ISTRUSTED::       Importing a Root Certificate
 * Agent GET_PASSPHRASE::  Ask for a passphrase
+* Agent CLEAR_PASSPHRASE:: Expire a cached passphrase
+@ifset gpgtwoone
+* Agent PRESET_PASSPHRASE:: Set a passphrase for a keygrip
+@end ifset
 * Agent GET_CONFIRMATION:: Ask for confirmation
 * Agent HAVEKEY::         Check whether a key is available
 * Agent LEARN::           Register a smartcard
@@ -873,9 +900,14 @@ Here is an example session:
    C: D    (b 3F444677CA)))
    C: END
    S: # session key follows
+   S: S PADDING 0
    S: D (value 1234567890ABCDEF0)
    S: OK descryption successful
 @end example
+
+The “PADDING” status line is only send if gpg-agent can tell what kind
+of padding is used.  As of now only the value 0 is used to indicate
+that the padding has been removed.
 
 
 @node Agent PKSIGN
@@ -972,7 +1004,12 @@ option allows to choose the storage location.  To get the secret key out
 of the PSE, a special export tool has to be used.
 
 @example
+@ifset gpgtwoone
+   GENKEY [--no-protection] [--preset] [<cache_nonce>]
+@end ifset
+@ifclear gpgtwoone
    GENKEY
+@end ifclear
 @end example
 
 Invokes the key generation process and the server will then inquire
@@ -1016,6 +1053,13 @@ Here is an example session:
    S: D   (rsa (n 326487324683264) (e 10001)))
    S  OK key created
 @end example
+
+@ifset gpgtwoone
+The @option{--no-protection} option may be used to prevent prompting for a
+passphrase to protect the secret key while leaving the secret key unprotected.
+The @option{--preset} option may be used to add the passphrase to the cache
+using the default cache parameters.
+@end ifset
 
 @node Agent IMPORT
 @subsection Importing a Secret Key
@@ -1173,6 +1217,52 @@ may be used to invalidate the cache entry for a passphrase.  The
 function returns with OK even when there is no cached passphrase.
 
 
+
+@node Agent CLEAR_PASSPHRASE
+@subsection Remove a cached passphrase
+
+Use this command to remove a cached passphrase.
+
+@example
+@ifset gpgtwoone
+  CLEAR_PASSPHRASE [--mode=normal] <cache_id>
+@end ifset
+@ifclear gpgtwoone
+  CLEAR_PASSPHRASE <cache_id>
+@end ifclear
+@end example
+
+@ifset gpgtwoone
+The @option{--mode=normal} option can be used to clear a @var{cache_id} that
+was set by gpg-agent.
+@end ifset
+
+
+
+@ifset gpgtwoone
+@node Agent PRESET_PASSPHRASE
+@subsection Set a passphrase for a keygrip
+
+This command adds a passphrase to the cache for the specified @var{keygrip}.
+
+@example
+  PRESET_PASSPHRASE [--inquire] <string_or_keygrip> <timeout> [<hexstring>]
+@end example
+
+The passphrase is a hexidecimal string when specified. When not specified, the
+passphrase will be retrieved from the pinentry module unless the
+@option{--inquire} option was specified in which case the passphrase will be
+retrieved from the client.
+
+The @var{timeout} parameter keeps the passphrase cached for the specified
+number of seconds. A value of @code{-1} means infinate while @code{0} means
+the default (currently only a timeout of -1 is allowed, which means to never
+expire it).
+@end ifset
+
+
+
+
 @node Agent GET_CONFIRMATION
 @subsection Ask for confirmation
 
@@ -1225,11 +1315,21 @@ option given the certificates are send back.
 @subsection Change a Passphrase
 
 @example
+@ifset gpgtwoone
+  PASSWD [--cache-nonce=<c>] [--passwd-nonce=<s>] [--preset] @var{keygrip}
+@end ifset
+@ifclear gpgtwoone
   PASSWD @var{keygrip}
+@end ifclear
 @end example
 
 This command is used to interactively change the passphrase of the key
 identified by the hex string @var{keygrip}.
+
+@ifset gpgtwoone
+The @option{--preset} option may be used to add the new passphrase to the
+cache using the default cache parameters.
+@end ifset
 
 
 @node Agent UPDATESTARTUPTTY

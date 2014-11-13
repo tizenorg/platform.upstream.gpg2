@@ -1,6 +1,6 @@
 /* http.c  -  HTTP protocol handler
  * Copyright (C) 1999, 2001, 2002, 2003, 2004, 2006,
- *               2009 Free Software Foundation, Inc.
+ *               2009, 2012, 2013 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -46,6 +46,9 @@
 #include <unistd.h>
 
 #ifdef HAVE_W32_SYSTEM
+# ifdef HAVE_WINSOCK2_H
+#  include <winsock2.h>
+# endif
 # include <windows.h>
 #else /*!HAVE_W32_SYSTEM*/
 # include <sys/types.h>
@@ -129,12 +132,12 @@ static int insert_escapes (char *buffer, const char *string,
                            const char *special);
 static uri_tuple_t parse_tuple (char *string);
 static gpg_error_t send_request (http_t hd, const char *auth,const char *proxy,
-				 const char *srvtag,strlist_t headers);
+				 struct http_srv *srv,strlist_t headers);
 static char *build_rel_path (parsed_uri_t uri);
 static gpg_error_t parse_response (http_t hd);
 
 static int connect_server (const char *server, unsigned short port,
-                           unsigned int flags, const char *srvtag);
+                           unsigned int flags, struct http_srv *srv);
 static gpg_error_t write_server (int sock, const char *data, size_t length);
 
 #ifdef HTTP_USE_ESTREAM
@@ -150,7 +153,7 @@ static es_cookie_io_functions_t cookie_functions =
     cookie_close
   };
 
-struct cookie_s 
+struct cookie_s
 {
   int fd;  /* File descriptor or -1 if already closed. */
   gnutls_session_t tls_session;  /* TLS session context or NULL if not used. */
@@ -176,7 +179,7 @@ typedef struct header_s *header_t;
 
 
 /* Our handle context. */
-struct http_context_s 
+struct http_context_s
 {
   unsigned int status_code;
   int sock;
@@ -228,14 +231,14 @@ init_sockets (void)
   if (initialized)
     return;
 
-  if ( WSAStartup( MAKEWORD (REQ_WINSOCK_MINOR, REQ_WINSOCK_MAJOR), &wsdata ) ) 
+  if ( WSAStartup( MAKEWORD (REQ_WINSOCK_MINOR, REQ_WINSOCK_MAJOR), &wsdata ) )
     {
-      log_error ("error initializing socket library: ec=%d\n", 
+      log_error ("error initializing socket library: ec=%d\n",
                  (int)WSAGetLastError () );
       return;
     }
-  if ( LOBYTE(wsdata.wVersion) != REQ_WINSOCK_MAJOR  
-       || HIBYTE(wsdata.wVersion) != REQ_WINSOCK_MINOR ) 
+  if ( LOBYTE(wsdata.wVersion) != REQ_WINSOCK_MAJOR
+       || HIBYTE(wsdata.wVersion) != REQ_WINSOCK_MINOR )
     {
       log_error ("socket library version is %x.%x - but %d.%d needed\n",
                  LOBYTE(wsdata.wVersion), HIBYTE(wsdata.wVersion),
@@ -260,7 +263,7 @@ static char *
 make_header_line (const char *prefix, const char *suffix,
                    const void *data, size_t len )
 {
-  static unsigned char bintoasc[] = 
+  static unsigned char bintoasc[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
     "0123456789+/";
@@ -278,7 +281,7 @@ make_header_line (const char *prefix, const char *suffix,
       *p++ = bintoasc[(((s[1]<<2)&074)|((s[2]>>6)&03))&077];
       *p++ = bintoasc[s[2]&077];
     }
-  if ( len == 2 ) 
+  if ( len == 2 )
     {
       *p++ = bintoasc[(s[0] >> 2) & 077];
       *p++ = bintoasc[(((s[0] <<4)&060)|((s[1] >> 4)&017))&077];
@@ -306,7 +309,7 @@ http_register_tls_callback ( gpg_error_t (*cb) (http_t, void *, int) )
   tls_callback = (gpg_error_t (*) (http_t, gnutls_session_t, int))cb;
 #else
   (void)cb;
-#endif  
+#endif
 }
 
 
@@ -315,13 +318,13 @@ http_register_tls_callback ( gpg_error_t (*cb) (http_t, void *, int) )
    pointer for completing the the request and to wait for the
    response. */
 gpg_error_t
-http_open (http_t *r_hd, http_req_t reqtype, const char *url, 
+http_open (http_t *r_hd, http_req_t reqtype, const char *url,
            const char *auth, unsigned int flags, const char *proxy,
-           void *tls_context, const char *srvtag,strlist_t headers)
+           void *tls_context, struct http_srv *srv, strlist_t headers)
 {
   gpg_error_t err;
   http_t hd;
-  
+
   *r_hd = NULL;
 
   if (!(reqtype == HTTP_REQ_GET || reqtype == HTTP_REQ_POST))
@@ -338,8 +341,8 @@ http_open (http_t *r_hd, http_req_t reqtype, const char *url,
 
   err = http_parse_uri (&hd->uri, url);
   if (!err)
-    err = send_request (hd, auth, proxy, srvtag, headers);
-  
+    err = send_request (hd, auth, proxy, srv, headers);
+
   if (err)
     {
       if (!hd->fp_read && !hd->fp_write && hd->sock != -1)
@@ -382,7 +385,7 @@ http_wait_response (http_t hd)
   gpg_error_t err;
 
   /* Make sure that we are in the data. */
-  http_start_data (hd);	
+  http_start_data (hd);
 
   /* We dup the socket, to cope with the fact that fclose closes the
      underlying socket. In TLS mode we don't do that because we can't
@@ -417,8 +420,6 @@ http_wait_response (http_t hd)
   hd->write_cookie = NULL;
 #endif
 
-  if (!(hd->flags & HTTP_FLAG_NO_SHUTDOWN))
-    shutdown (hd->sock, 1);
   hd->in_data = 0;
 
 #ifdef HTTP_USE_ESTREAM
@@ -455,14 +456,15 @@ http_wait_response (http_t hd)
    be used as an HTTP proxy and any enabled $http_proxy gets
    ignored. */
 gpg_error_t
-http_open_document (http_t *r_hd, const char *document, 
+http_open_document (http_t *r_hd, const char *document,
                     const char *auth, unsigned int flags, const char *proxy,
-                    void *tls_context, const char *srvtag,strlist_t headers)
+                    void *tls_context, struct http_srv *srv,
+		    strlist_t headers)
 {
   gpg_error_t err;
 
   err = http_open (r_hd, HTTP_REQ_GET, document, auth, flags,
-                   proxy, tls_context, srvtag, headers);
+                   proxy, tls_context, srv, headers);
   if (err)
     return err;
 
@@ -608,7 +610,7 @@ do_parse_uri (parsed_uri_t uri, int only_local_part)
 
       p++;
       if (*p == '/') /* There seems to be a hostname. */
-	{ 
+	{
 	  p++;
 	  if ((p2 = strchr (p, '/')))
 	    *p2++ = 0;
@@ -666,7 +668,7 @@ do_parse_uri (parsed_uri_t uri, int only_local_part)
     return gpg_error (GPG_ERR_BAD_URI);	/* Path includes a Nul. */
   p = p2 ? p2 : NULL;
 
-  if (!p || !*p)	
+  if (!p || !*p)
     return 0; /* We don't have a query string.  Okay. */
 
   /* Now parse the query string. */
@@ -836,7 +838,7 @@ parse_tuple (char *string)
  */
 static gpg_error_t
 send_request (http_t hd, const char *auth,
-	      const char *proxy,const char *srvtag,strlist_t headers)
+	      const char *proxy, struct http_srv *srv, strlist_t headers)
 {
   gnutls_session_t tls_session;
   gpg_error_t err;
@@ -860,7 +862,7 @@ send_request (http_t hd, const char *auth,
 
   if ( (proxy && *proxy)
        || ( (hd->flags & HTTP_FLAG_TRY_PROXY)
-            && (http_proxy = getenv (HTTP_PROXY_ENV)) 
+            && (http_proxy = getenv (HTTP_PROXY_ENV))
             && *http_proxy ))
     {
       parsed_uri_t uri;
@@ -894,20 +896,20 @@ send_request (http_t hd, const char *auth,
 
       hd->sock = connect_server (*uri->host ? uri->host : "localhost",
 				 uri->port ? uri->port : 80,
-                                 hd->flags, srvtag);
+                                 hd->flags, srv);
       save_errno = errno;
       http_release_parsed_uri (uri);
     }
   else
     {
-      hd->sock = connect_server (server, port, hd->flags, srvtag);
+      hd->sock = connect_server (server, port, hd->flags, srv);
       save_errno = errno;
     }
 
   if (hd->sock == -1)
     {
       xfree (proxy_authstr);
-      return (save_errno 
+      return (save_errno
               ? gpg_error_from_errno (save_errno)
               : gpg_error (GPG_ERR_NOT_FOUND));
     }
@@ -947,7 +949,7 @@ send_request (http_t hd, const char *auth,
   if (auth || hd->uri->auth)
     {
       char *myauth;
-      
+
       if (auth)
         {
           myauth = xtrystrdup (auth);
@@ -975,12 +977,12 @@ send_request (http_t hd, const char *auth,
           return gpg_error_from_syserror ();
         }
     }
-  
+
   p = build_rel_path (hd->uri);
   if (!p)
     return gpg_error_from_syserror ();
 
-  request = xtrymalloc (2 * strlen (server) 
+  request = xtrymalloc (2 * strlen (server)
                         + strlen (p)
                         + (authstr?strlen(authstr):0)
                         + (proxy_authstr?strlen(proxy_authstr):0)
@@ -1007,8 +1009,8 @@ send_request (http_t hd, const char *auth,
   else
     {
       char portstr[35];
-        
-      if (port == 80)
+
+      if (port == 80 || (srv && srv->used_server))
         *portstr = 0;
       else
         sprintf (portstr, ":%u", port);
@@ -1189,7 +1191,7 @@ my_read_line (
   char *p;
 
   if (!buffer) /* Must allocate a new buffer. */
-    {		
+    {
       length = 256;
       buffer = xtrymalloc (length);
       *addr_of_buffer = buffer;
@@ -1206,7 +1208,7 @@ my_read_line (
   while ((c = P_ES(getc) (fp)) != EOF)
     {
       if (nbytes == length) /* Increase the buffer. */
-	{			
+	{
 	  if (length > maxlen) /* Limit reached. */
 	    {
 	      /* Skip the rest of the line. */
@@ -1311,7 +1313,7 @@ store_header (http_t hd, char *line)
   while (*p == ' ' || *p == '\t')
     p++;
   value = p;
-  
+
   for (h=hd->headers; h; h = h->next)
     if ( !strcmp (h->name, line) )
       break;
@@ -1540,12 +1542,14 @@ start_server ()
    error.  ERRNO is set on error. */
 static int
 connect_server (const char *server, unsigned short port,
-                unsigned int flags, const char *srvtag)
+                unsigned int flags, struct http_srv *srv)
 {
   int sock = -1;
   int srvcount = 0;
+  int fakesrv = 0;
   int hostfound = 0;
-  int srv, connected;
+  int srvindex, connected;
+  int chosen = -1;
   int last_errno = 0;
   struct srventry *serverlist = NULL;
 
@@ -1564,9 +1568,9 @@ connect_server (const char *server, unsigned short port,
   if ( inaddr != INADDR_NONE )
     {
       struct sockaddr_in addr;
-      
+
       memset(&addr,0,sizeof(addr));
-      
+
       sock = socket(AF_INET,SOCK_STREAM,0);
       if ( sock==INVALID_SOCKET )
 	{
@@ -1574,9 +1578,9 @@ connect_server (const char *server, unsigned short port,
 	  return -1;
 	}
 
-      addr.sin_family = AF_INET; 
+      addr.sin_family = AF_INET;
       addr.sin_port = htons(port);
-      memcpy (&addr.sin_addr,&inaddr,sizeof(inaddr));      
+      memcpy (&addr.sin_addr,&inaddr,sizeof(inaddr));
 
       if (!connect (sock,(struct sockaddr *)&addr,sizeof(addr)) )
 	return sock;
@@ -1587,14 +1591,14 @@ connect_server (const char *server, unsigned short port,
 
 #ifdef USE_DNS_SRV
   /* Do the SRV thing */
-  if (srvtag)
+  if (srv && srv->srvtag)
     {
       /* We're using SRV, so append the tags. */
-      if (1+strlen (srvtag) + 6 + strlen (server) + 1 <= MAXDNAME)
+      if (1+strlen (srv->srvtag) + 6 + strlen (server) + 1 <= MAXDNAME)
 	{
 	  char srvname[MAXDNAME];
 
-	  stpcpy (stpcpy (stpcpy (stpcpy (srvname,"_"), srvtag),
+	  stpcpy (stpcpy (stpcpy (stpcpy (srvname,"_"), srv->srvtag),
                            "._tcp."), server);
 	  srvcount = getsrv (srvname, &serverlist);
 	}
@@ -1612,19 +1616,20 @@ connect_server (const char *server, unsigned short port,
       strncpy (serverlist->target, server, MAXDNAME);
       serverlist->target[MAXDNAME-1] = '\0';
       srvcount = 1;
+      fakesrv = 1;
     }
 
 #ifdef HAVE_GETADDRINFO
   connected = 0;
-  for (srv=0; srv < srvcount && !connected; srv++)
+  for (srvindex=0; srvindex < srvcount && !connected; srvindex++)
     {
       struct addrinfo hints, *res, *ai;
       char portstr[35];
 
-      sprintf (portstr, "%hu", port);
+      sprintf (portstr, "%hu", serverlist[srvindex].port);
       memset (&hints, 0, sizeof (hints));
       hints.ai_socktype = SOCK_STREAM;
-      if (getaddrinfo (serverlist[srv].target, portstr, &hints, &res))
+      if (getaddrinfo (serverlist[srvindex].target, portstr, &hints, &res))
         continue; /* Not found - try next one. */
       hostfound = 1;
 
@@ -1642,17 +1647,20 @@ connect_server (const char *server, unsigned short port,
               errno = save_errno;
               return -1;
             }
-          
+
           if (connect (sock, ai->ai_addr, ai->ai_addrlen))
             last_errno = errno;
           else
-            connected = 1;
+            {
+	      connected = 1;
+	      chosen = srvindex;
+	    }
         }
       freeaddrinfo (res);
     }
 #else /* !HAVE_GETADDRINFO */
   connected = 0;
-  for (srv=0; srv < srvcount && !connected; srv++)
+  for (srvindex=0; srvindex < srvcount && !connected; srvindex++)
     {
       int i;
       struct hostent *host = NULL;
@@ -1661,7 +1669,7 @@ connect_server (const char *server, unsigned short port,
       /* Note: This code is not thread-safe.  */
 
       memset (&addr, 0, sizeof (addr));
-      host = gethostbyname (serverlist[srv].target);
+      host = gethostbyname (serverlist[srvindex].target);
       if (!host)
         continue;
       hostfound = 1;
@@ -1675,20 +1683,20 @@ connect_server (const char *server, unsigned short port,
           xfree (serverlist);
           return -1;
         }
-      
+
       addr.sin_family = host->h_addrtype;
       if (addr.sin_family != AF_INET)
 	{
 	  log_error ("unknown address family for `%s'\n",
-                     serverlist[srv].target);
+                     serverlist[srvindex].target);
           xfree (serverlist);
 	  return -1;
 	}
-      addr.sin_port = htons (serverlist[srv].port);
+      addr.sin_port = htons (serverlist[srvindex].port);
       if (host->h_length != 4)
         {
           log_error ("illegal address length for `%s'\n",
-                     serverlist[srv].target);
+                     serverlist[srvindex].target);
           xfree (serverlist);
           return -1;
         }
@@ -1702,11 +1710,18 @@ connect_server (const char *server, unsigned short port,
           else
             {
               connected = 1;
+	      chosen = srvindex;
               break;
             }
         }
     }
 #endif /* !HAVE_GETADDRINFO */
+
+  if(!fakesrv && chosen >- 1 && srv)
+    {
+      srv->used_server = xstrdup (serverlist[chosen].target);
+      srv->used_port = serverlist[chosen].port;
+    }
 
   xfree (serverlist);
 
@@ -1741,9 +1756,9 @@ write_server (int sock, const char *data, size_t length)
     {
 #ifdef HAVE_W32_SYSTEM
       int nwritten;
-      
+
       nwritten = send (sock, data, nleft, 0);
-      if ( nwritten == SOCKET_ERROR ) 
+      if ( nwritten == SOCKET_ERROR )
         {
           log_info ("network write failed: ec=%d\n", (int)WSAGetLastError ());
           return gpg_error (GPG_ERR_NETWORK);
@@ -1796,7 +1811,7 @@ cookie_read (void *cookie, void *buffer, size_t size)
           if (nread == GNUTLS_E_AGAIN)
             {
               struct timeval tv;
-              
+
               tv.tv_sec = 0;
               tv.tv_usec = 50000;
               select (0, NULL, NULL, NULL, &tv);
@@ -1817,7 +1832,7 @@ cookie_read (void *cookie, void *buffer, size_t size)
 #ifdef HAVE_W32_SYSTEM
           /* Under Windows we need to use recv for a socket.  */
           nread = recv (c->fd, buffer, size, 0);
-#else          
+#else
           nread = read (c->fd, buffer, size);
 #endif
         }
@@ -1840,7 +1855,7 @@ cookie_write (void *cookie, const void *buffer, size_t size)
       int nleft = size;
       while (nleft > 0)
         {
-          nwritten = gnutls_record_send (c->tls_session, buffer, nleft); 
+          nwritten = gnutls_record_send (c->tls_session, buffer, nleft);
           if (nwritten <= 0)
             {
               if (nwritten == GNUTLS_E_INTERRUPTED)
@@ -1848,7 +1863,7 @@ cookie_write (void *cookie, const void *buffer, size_t size)
               if (nwritten == GNUTLS_E_AGAIN)
                 {
                   struct timeval tv;
-                  
+
                   tv.tv_sec = 0;
                   tv.tv_usec = 50000;
                   select (0, NULL, NULL, NULL, &tv);
@@ -2025,8 +2040,7 @@ main (int argc, char **argv)
   http_release_parsed_uri (uri);
   uri = NULL;
 
-  rc = http_open_document (&hd, *argv, NULL, 
-                           HTTP_FLAG_NO_SHUTDOWN | HTTP_FLAG_NEED_HEADER,
+  rc = http_open_document (&hd, *argv, NULL, HTTP_FLAG_NEED_HEADER,
                            NULL, tls_session);
   if (rc)
     {

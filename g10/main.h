@@ -89,9 +89,11 @@ int map_cipher_openpgp_to_gcry (int algo);
 int openpgp_cipher_blocklen (int algo);
 int openpgp_cipher_test_algo( int algo );
 const char *openpgp_cipher_algo_name (int algo);
+int map_pk_openpgp_to_gcry (int algo);
 int openpgp_pk_test_algo( int algo );
 int openpgp_pk_test_algo2 ( int algo, unsigned int use );
 int openpgp_pk_algo_usage ( int algo );
+const char *openpgp_pk_algo_name (int algo);
 int openpgp_md_test_algo( int algo );
 
 #ifdef USE_IDEA
@@ -107,13 +109,14 @@ struct expando_args
   byte imagetype;
   int validity_info;
   const char *validity_string;
+  const byte *namehash;
 };
 
 char *pct_expando(const char *string,struct expando_args *args);
 void deprecated_warning(const char *configname,unsigned int configlineno,
 			const char *option,const char *repl1,const char *repl2);
 void deprecated_command (const char *name);
-void obsolete_option (const char *configname, unsigned int configlineno, 
+void obsolete_option (const char *configname, unsigned int configlineno,
                       const char *name);
 
 int string_to_cipher_algo (const char *string);
@@ -158,6 +161,8 @@ int  is_status_enabled ( void );
 void write_status ( int no );
 void write_status_error (const char *where, int errcode);
 void write_status_text ( int no, const char *text );
+void write_status_strings (int no, const char *text,
+                           ...) GNUPG_GCC_A_SENTINEL(0);
 void write_status_buffer ( int no,
                            const char *buffer, size_t len, int wrap );
 void write_status_text_and_buffer ( int no, const char *text,
@@ -255,18 +260,22 @@ gcry_mpi_t encode_md_value( PKT_public_key *pk, PKT_secret_key *sk,
                             gcry_md_hd_t md, int hash_algo );
 
 /*-- import.c --*/
+
+typedef int (*import_filter_t)(kbnode_t keyblock, void *arg);
+
 int parse_import_options(char *str,unsigned int *options,int noisy);
 void import_keys( char **fnames, int nnames,
 		  void *stats_hd, unsigned int options );
-int import_keys_stream( iobuf_t inp,void *stats_hd,unsigned char **fpr,
-			size_t *fpr_len,unsigned int options );
+int import_keys_stream (iobuf_t inp, void *stats_hd, unsigned char **fpr,
+                        size_t *fpr_len, unsigned int options,
+                        import_filter_t filter, void *filter_arg);
 void *import_new_stats_handle (void);
 void import_release_stats_handle (void *p);
 void import_print_stats (void *hd);
 
 int collapse_uids( KBNODE *keyblock );
 
-int auto_create_card_key_stub ( const char *serialnostr, 
+int auto_create_card_key_stub ( const char *serialnostr,
                                 const unsigned char *fpr1,
                                 const unsigned char *fpr2,
                                 const unsigned char *fpr3);

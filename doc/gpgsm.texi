@@ -259,12 +259,25 @@ certificate are only exported if all @var{pattern} are given as
 fingerprints or keygrips.
 
 @item --export-secret-key-p12 @var{key-id}
-@opindex export
+@opindex export-secret-key-p12
 Export the private key and the certificate identified by @var{key-id} in
-a PKCS#12 format. When using along with the @code{--armor} option a few
+a PKCS#12 format. When used with the @code{--armor} option a few
 informational lines are prepended to the output.  Note, that the PKCS#12
 format is not very secure and this command is only provided if there is
 no other way to exchange the private key. (@pxref{option --p12-charset})
+
+@ifset gpgtwoone
+@item --export-secret-key-p8 @var{key-id}
+@itemx --export-secret-key-raw @var{key-id}
+@opindex export-secret-key-p8
+@opindex export-secret-key-raw
+Export the private key of the certificate identified by @var{key-id}
+with any encryption stripped.  The @code{...-raw} command exports in
+PKCS#1 format; the @code{...-p8} command exports in PKCS#8 format.
+When used with the @code{--armor} option a few informational lines are
+prepended to the output.  These commands are useful to prepare a key
+for use on a TLS server.
+@end ifset
 
 @item --import [@var{files}]
 @opindex import
@@ -319,6 +332,7 @@ in the option file.
 
 @table @gnupgtabopt
 
+@anchor{gpgsm-option --options}
 @item --options @var{file}
 @opindex options
 Reads configuration from @var{file} instead of from the default
@@ -349,7 +363,7 @@ as a fallback when the environment variable @code{GPG_AGENT_INFO} is not
 set or a running agent cannot be connected.
 
 @item --dirmngr-program @var{file}
-@opindex dirmnr-program
+@opindex dirmngr-program
 Specify a dirmngr program to be used for @acronym{CRL} checks.  The
 default value is @file{/usr/sbin/dirmngr}.  This is only used as a
 fallback when the environment variable @code{DIRMNGR_INFO} is not set or
@@ -567,6 +581,13 @@ certificate.
 Include the keygrip in standard key listings.  Note that the keygrip is
 always listed in --with-colons mode.
 
+@ifset gpgtwoone
+@item --with-secret
+@opindex with-secret
+Include info about the presence of a secret key in public key listings
+done with @code{--with-colons}.
+@end ifset
+
 @end table
 
 @c *******************************************
@@ -760,8 +781,8 @@ current home directory (@pxref{option --homedir}).
 This is the standard configuration file read by @command{gpgsm} on
 startup.  It may contain any valid long option; the leading two dashes
 may not be entered and the option may not be abbreviated.  This default
-name may be changed on the command line (@pxref{option
-  --options}).  You should backup this file.
+name may be changed on the command line (@pxref{gpgsm-option --options}).
+You should backup this file.
 
 
 @item policies.txt
@@ -915,8 +936,8 @@ but may also be used in the standard operation mode by using the
 * CSR and certificate creation::  CSR and certificate creation.
 @end menu
 
-@node Automated signature checking,,,Unattended Usage
-@section Automated signature checking
+@node Automated signature checking
+@subsection Automated signature checking
 
 It is very important to understand the semantics used with signature
 verification.  Checking a signature is not as simple as it may sound and
@@ -959,8 +980,8 @@ this is a missing certificate.
 
 @end table
 
-@node CSR and certificate creation,,,Unattended Usage
-@section CSR and certificate creation
+@node CSR and certificate creation
+@subsection CSR and certificate creation
 
 @ifclear gpgtwoone
 @strong{Please notice}: The immediate creation of certificates is only

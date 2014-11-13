@@ -1,3 +1,149 @@
+Noteworthy changes in version 2.0.26 (2014-08-12)
+-------------------------------------------------
+
+ * gpg: Fix a regression in 2.0.24 if a subkey id is given
+   to --recv-keys et al.
+
+ * gpg: Cap attribute packets at 16MB.
+
+ * gpgsm: Auto-create the ".gnupg" home directory in the same
+   way gpg does.
+
+ * scdaemon: Allow for certificates > 1024 when using PC/SC.
+
+
+Noteworthy changes in version 2.0.25 (2014-06-30)
+-------------------------------------------------
+
+ * gpg: Fix a regression in 2.0.24 if more than one keyid is given
+   to --recv-keys et al.
+
+ * gpg: Cap RSA and Elgamal keysize at 4096 bit also for unattended
+   key generation.
+
+ * gpgsm: Fix a DISPLAY related problem with --export-secret-key-p12.
+
+ * scdaemon: Support reader Gemalto IDBridge CT30.
+
+
+Noteworthy changes in version 2.0.24 (2014-06-24)
+-------------------------------------------------
+
+ * gpg: Avoid DoS due to garbled compressed data packets. [CVE-2014-4617]
+
+ * gpg: Screen keyserver responses to avoid importing unwanted keys
+   from rogue servers.
+
+ * gpg: The validity of user ids is now shown by default.  To revert
+   this add "list-options no-show-uid-validity" to gpg.conf.
+
+ * gpg: Print more specific reason codes with the INV_RECP status.
+
+ * gpg: Allow loading of a cert only key to an OpenPGP card.
+
+ * gpg-agent: Make ssh support for ECDSA keys work with Libgcrypt 1.6.
+
+
+Noteworthy changes in version 2.0.23 (2014-06-03)
+-------------------------------------------------
+
+ * gpg: Reject signatures made using the MD5 hash algorithm unless the
+   new option --allow-weak-digest-algos or --pgp2 are given.
+
+ * gpg: Do not create a trustdb file if --trust-model=always is used.
+
+ * gpg: Only the major version number is by default included in the
+   armored output.
+
+ * gpg: Print a warning if the Gnome-Keyring-Daemon intercepts the
+   communication with the gpg-agent.
+
+ * gpg: The format of the fallback key listing ("gpg KEYFILE") is now more
+   aligned to the regular key listing ("gpg -k").
+
+ * gpg: The option--show-session-key prints its output now before the
+   decryption of the bulk message starts.
+
+ * gpg: New %U expando for the photo viewer.
+
+ * gpgsm: Improved handling of re-issued CA certificates.
+
+ * scdaemon: Various fixes for pinpad equipped card readers.
+
+ * Minor bug fixes.
+
+
+Noteworthy changes in version 2.0.22 (2013-10-04)
+-------------------------------------------------
+
+ * Fixed possible infinite recursion in the compressed packet
+   parser. [CVE-2013-4402]
+
+ * Improved support for some card readers.
+
+ * Prepared building with the forthcoming Libgcrypt 1.6.
+
+ * Protect against rogue keyservers sending secret keys.
+
+
+Noteworthy changes in version 2.0.21 (2013-08-19)
+-------------------------------------------------
+
+ * gpg-agent: By default the users are now asked via the Pinentry
+   whether they trust an X.509 root key.  To prohibit interactive
+   marking of such keys, the new option --no-allow-mark-trusted may
+   be used.
+
+ * gpg-agent: The command KEYINFO has options to add info from
+   sshcontrol.
+
+ * The included ssh agent does now support ECDSA keys.
+
+ * The new option --enable-putty-support allows gpg-agent to act on
+   Windows as a Pageant replacement with full smartcard support.
+
+ * Support installation as portable application under Windows.
+
+
+Noteworthy changes in version 2.0.20 (2013-05-10)
+-------------------------------------------------
+
+ * Decryption using smartcards keys > 3072 bit does now work.
+
+ * New meta option ignore-invalid-option to allow using the same
+   option file by other GnuPG versions.
+
+ * gpg: The hash algorithm is now printed for sig records in key listings.
+
+ * gpg: Skip invalid keyblock packets during import to avoid a DoS.
+
+ * gpg: Correctly handle ports from DNS SRV records.
+
+ * keyserver: Improve use of SRV records
+
+ * gpg-agent: Avoid tty corruption when killing pinentry.
+
+ * scdaemon: Improve detection of card insertion and removal.
+
+ * scdaemon: Rename option --disable-keypad to --disable-pinpad.
+
+ * scdaemon: Better support for CCID readers.  Now, the internal CCID
+   driver supports readers without the auto configuration feature.
+
+ * scdaemon: Add pinpad input for PC/SC, if your reader has pinpad and
+   it supports variable length PIN input, and you specify
+   --enable-pinpad-varlen option.
+
+ * scdaemon: New option --enable-pinpad-varlen.
+
+ * scdaemon: Install into libexecdir to avoid accidental execution
+   from the command line.
+
+ * Support building using w64-mingw32.
+
+ * Assorted bug fixes.
+
+
 Noteworthy changes in version 2.0.19 (2012-03-27)
 -------------------------------------------------
 

@@ -18,14 +18,14 @@
 
 ## Process this file with automake to produce Makefile.in
 
-EXTRA_DIST = options.skel ChangeLog-2011
+EXTRA_DIST = options.skel ChangeLog-2011 gpg-w32info.rc
 
 AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/common \
               -I$(top_srcdir)/include -I$(top_srcdir)/intl
 
 include $(top_srcdir)/am/cmacros.am
 
-AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS)
+AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) $(LIBASSUAN_CFLAGS)
 
 needed_libs = $(libcommon) ../jnlib/libjnlib.a ../gl/libgnu.a
 
@@ -39,6 +39,9 @@ else
 bzip2_source =
 endif
 
+if HAVE_W32_SYSTEM
+resource_objs += gpg-w32info.o
+endif
 
 common_source =  \
 	      gpg.h             \
@@ -120,9 +123,9 @@ LDADD =  $(needed_libs) ../common/libgpgrl.a \
          $(ZLIBS) $(DNSLIBS) $(LIBREADLINE) \
          $(LIBINTL) $(CAPLIBS) $(NETLIBS)
 gpg2_LDADD =  $(LDADD) $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
-	     $(LIBICONV)
-gpgv2_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
-	      $(LIBICONV)
+	     $(LIBICONV) $(resource_objs)
+gpgv2_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+	      $(LIBICONV) $(resource_objs)
 
 t_common_ldadd =
 module_tests = t-rmd160

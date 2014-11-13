@@ -104,6 +104,23 @@ decrypt_data( void *procctx, PKT_encrypted *ed, DEK *dek )
     write_status_text (STATUS_DECRYPTION_INFO, buf);
   }
 
+  if (opt.show_session_key)
+    {
+      char numbuf[25];
+      char *hexbuf;
+
+      snprintf (numbuf, sizeof numbuf, "%d:", dek->algo);
+      hexbuf = bin2hex (dek->key, dek->keylen, NULL);
+      if (!hexbuf)
+        {
+          rc = gpg_error_from_syserror ();
+          goto leave;
+        }
+      log_info ("session key: '%s%s'\n", numbuf, hexbuf);
+      write_status_strings (STATUS_SESSION_KEY, numbuf, hexbuf, NULL);
+      xfree (hexbuf);
+    }
+
   rc = openpgp_cipher_test_algo (dek->algo);
   if (rc)
     goto leave;
@@ -119,7 +136,7 @@ decrypt_data( void *procctx, PKT_encrypted *ed, DEK *dek )
       if (gcry_md_open (&dfx->mdc_hash, ed->mdc_method, 0 ))
         BUG ();
       if ( DBG_HASHING )
-        gcry_md_start_debug (dfx->mdc_hash, "checkmdc");
+        gcry_md_debug (dfx->mdc_hash, "checkmdc");
     }
 
   rc = openpgp_cipher_open (&dfx->cipher_hd, dek->algo,
@@ -223,14 +240,10 @@ decrypt_data( void *procctx, PKT_encrypted *ed, DEK *dek )
       gcry_md_write (dfx->mdc_hash, dfx->defer, 2);
       gcry_md_final (dfx->mdc_hash);
 
-      if (dfx->defer[0] != '\xd3' || dfx->defer[1] != '\x14' )
-        {
-          log_error("mdc_packet with invalid encoding\n");
-          rc = gpg_error (GPG_ERR_INV_PACKET);
-        }
-      else if (datalen != 20
-               || memcmp (gcry_md_read (dfx->mdc_hash, 0),
-                          dfx->defer+2,datalen ))
+      if (   dfx->defer[0] != '\xd3'
+          || dfx->defer[1] != '\x14'
+          || datalen != 20
+          || memcmp (gcry_md_read (dfx->mdc_hash, 0), dfx->defer+2, datalen))
         rc = gpg_error (GPG_ERR_BAD_SIGNATURE);
       /* log_printhex("MDC message:", dfx->defer, 22); */
       /* log_printhex("MDC calc:", gcry_md_read (dfx->mdc_hash,0), datalen); */

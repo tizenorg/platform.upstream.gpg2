@@ -29,6 +29,12 @@
 /* Define to the number of bits in type 'wint_t'. */
 #undef BITSIZEOF_WINT_T
 
+/* GIT commit id revision used to build this package */
+#undef BUILD_REVISION
+
+/* The time this package was configured for a build */
+#undef BUILD_TIMESTAMP
+
 /* Define to one of `_getb67', `GETB67', `getb67' for Cray-2 and Cray-YMP
    systems. This function is required for `alloca.c' support on those systems.
    */
@@ -192,6 +198,9 @@
 
 /* Define if you have the iconv() function and it works. */
 #undef HAVE_ICONV
+
+/* Define to 1 if you have the `inet_ntop' function. */
+#undef HAVE_INET_NTOP
 
 /* Define to 1 if the system has the type `intmax_t'. */
 #undef HAVE_INTMAX_T
@@ -535,6 +544,9 @@
 /* Defined if libcurl supports TFTP */
 #undef LIBCURL_PROTOCOL_TFTP
 
+/* The version of the libcurl library in packed hex form */
+#undef LIBCURL_VERNUM
+
 /* Defined if the host has little endian byte ordering */
 #undef LITTLE_ENDIAN_HOST
 
@@ -710,6 +722,11 @@
    'wint_t'. */
 #undef WINT_T_SUFFIX
 
+/* Enable large inode numbers on Mac OS X 10.5.  */
+#ifndef _DARWIN_USE_64_BIT_INODE
+# define _DARWIN_USE_64_BIT_INODE 1
+#endif
+
 /* Number of bits in a file offset, on hosts where this is settable. */
 #undef _FILE_OFFSET_BITS
 
@@ -876,6 +893,9 @@
 
 /* We don't want the old assuan codes anymore. */
 #define _ASSUAN_ONLY_GPG_ERRORS 1
+
+/* We don't need any of the old gcrypt functions.  */
+#define GCRYPT_NO_DEPRECATED 1
 
 /* We explicitly need to disable PTH's soft mapping as Debian
    currently enables it by default for no reason. */

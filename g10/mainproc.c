@@ -1,6 +1,7 @@
 /* mainproc.c - handle packets
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
  *               2008, 2009 Free Software Foundation, Inc.
+ * Copyright (C) 2013 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -40,6 +41,11 @@
 #include "keyserver-internal.h"
 #include "photoid.h"
 #include "pka.h"
+
+
+/* Put an upper limit on nested packets.  The 32 is an arbitrary
+   value, a much lower should actually be sufficient.  */
+#define MAX_NESTING_DEPTH 32
 
 
 struct kidlist_item {
@@ -86,12 +92,16 @@ struct mainproc_context
   DEK *dek;
   int last_was_session_key;
   KBNODE list;      /* The current list of packets. */
-  int have_data;
   IOBUF iobuf;      /* Used to get the filename etc. */
   int trustletter;  /* Temporary usage in list_node. */
   ulong symkeys;
   struct kidlist_item *pkenc_list; /* List of encryption packets. */
-  int any_sig_seen;  /* Set to true if a signature packet has been seen. */
+  struct {
+    unsigned int sig_seen:1;      /* Set to true if a signature packet
+                                     has been seen. */
+    unsigned int data:1;          /* Any data packet seen */
+    unsigned int uncompress_failed:1;
+  } any;
 };
 
 
@@ -120,7 +130,8 @@ release_list( CTX c )
     }
     c->pkenc_list = NULL;
     c->list = NULL;
-    c->have_data = 0;
+    c->any.data = 0;
+    c->any.uncompress_failed = 0;
     c->last_was_session_key = 0;
     xfree(c->dek); c->dek = NULL;
 }
@@ -198,7 +209,7 @@ add_signature( CTX c, PACKET *pkt )
 {
     KBNODE node;
 
-    c->any_sig_seen = 1;
+    c->any.sig_seen = 1;
     if( pkt->pkttype == PKT_SIGNATURE && !c->list ) {
 	/* This is the first signature for the following datafile.
 	 * GPG does not write such packets; instead it always uses
@@ -444,7 +455,7 @@ print_pkenc_list( struct kidlist_item *list, int failed )
         if ( !failed && list->reason )
             continue;
 
-        algstr = gcry_pk_algo_name ( list->pubkey_algo );
+        algstr = openpgp_pk_algo_name ( list->pubkey_algo );
         pk = xmalloc_clear( sizeof *pk );
 
 	if( !algstr )
@@ -558,6 +569,7 @@ proc_encrypted( CTX c, PACKET *pkt )
     }
     else if( !c->dek )
 	result = G10ERR_NO_SECKEY;
+
     if( !result )
 	result = decrypt_data( c, pkt->pkt.encrypted, c->dek );
 
@@ -572,16 +584,6 @@ proc_encrypted( CTX c, PACKET *pkt )
 	    write_status( STATUS_GOODMDC );
 	else if(!opt.no_mdc_warn)
 	    log_info (_("WARNING: message was not integrity protected\n"));
-	if(opt.show_session_key)
-	  {
-	    int i;
-	    char *buf = xmalloc ( c->dek->keylen*2 + 20 );
-	    sprintf ( buf, "%d:", c->dek->algo );
-	    for(i=0; i < c->dek->keylen; i++ )
-	      sprintf(buf+strlen(buf), "%02X", c->dek->key[i] );
-	    log_info( "session key: `%s'\n", buf );
-	    write_status_text ( STATUS_SESSION_KEY, buf );
-	  }
     }
     else if( result == G10ERR_BAD_SIGN ) {
 	log_error(_("WARNING: encrypted message has been manipulated!\n"));
@@ -699,9 +701,9 @@ proc_plaintext( CTX c, PACKET *pkt )
         BUG ();
     }
     if ( DBG_HASHING ) {
-	gcry_md_start_debug ( c->mfx.md, "verify" );
+	gcry_md_debug ( c->mfx.md, "verify" );
 	if ( c->mfx.md2  )
-	    gcry_md_start_debug ( c->mfx.md2, "verify2" );
+	    gcry_md_debug ( c->mfx.md2, "verify2" );
     }
 
     rc=0;
@@ -764,23 +766,37 @@ proc_encrypt_cb( IOBUF a, void *info )
     return proc_encryption_packets( info, a );
 }
 
-static void
+static int
 proc_compressed( CTX c, PACKET *pkt )
 {
-    PKT_compressed *zd = pkt->pkt.compressed;
-    int rc;
+  PKT_compressed *zd = pkt->pkt.compressed;
+  int rc;
 
-    /*printf("zip: compressed data packet\n");*/
-    if (c->sigs_only)
-	rc = handle_compressed( c, zd, proc_compressed_cb, c );
-    else if( c->encrypt_only )
-	rc = handle_compressed( c, zd, proc_encrypt_cb, c );
-    else
-	rc = handle_compressed( c, zd, NULL, NULL );
-    if( rc )
-	log_error("uncompressing failed: %s\n", g10_errstr(rc));
-    free_packet(pkt);
-    c->last_was_session_key = 0;
+  /*printf("zip: compressed data packet\n");*/
+  if (c->sigs_only)
+    rc = handle_compressed (c, zd, proc_compressed_cb, c);
+  else if (c->encrypt_only)
+    rc = handle_compressed (c, zd, proc_encrypt_cb, c);
+  else
+    rc = handle_compressed (c, zd, NULL, NULL);
+
+  if (gpg_err_code (rc) == GPG_ERR_BAD_DATA)
+    {
+      if  (!c->any.uncompress_failed)
+        {
+          CTX cc;
+
+          for (cc=c; cc; cc = cc->anchor)
+            cc->any.uncompress_failed = 1;
+          log_error ("uncompressing failed: %s\n", g10_errstr(rc));
+        }
+      }
+  else if (rc)
+    log_error("uncompressing failed: %s\n", g10_errstr(rc));
+
+  free_packet (pkt);
+  c->last_was_session_key = 0;
+  return rc;
 }
 
 /****************
@@ -901,7 +917,6 @@ print_userid( PACKET *pkt )
 static void
 list_node( CTX c, KBNODE node )
 {
-    int any=0;
     int mainkey;
 
     if( !node )
@@ -929,47 +944,55 @@ list_node( CTX c, KBNODE node )
 	    if( mainkey && !opt.fast_list_mode )
 	      putchar( get_ownertrust_info (pk) );
 	    putchar(':');
-	    if( node->next && node->next->pkt->pkttype == PKT_RING_TRUST) {
-	      putchar('\n'); any=1;
-	      if( opt.fingerprint )
-		print_fingerprint( pk, NULL, 0 );
-	      printf("rtv:1:%u:\n",
-		     node->next->pkt->pkt.ring_trust->trustval );
-	    }
-	  }
+          }
 	else
-	  printf("%s  %4u%c/%s %s%s",
-		 mainkey? "pub":"sub", nbits_from_pk( pk ),
-		 pubkey_letter( pk->pubkey_algo ), keystr_from_pk( pk ),
-		 datestr_from_pk( pk ), mainkey?" ":"");
+          {
+            printf("%s  %4u%c/%s %s",
+                   mainkey? "pub":"sub", nbits_from_pk( pk ),
+                   pubkey_letter( pk->pubkey_algo ), keystr_from_pk( pk ),
+                   datestr_from_pk (pk));
+          }
+
+        if (pk->is_revoked)
+          {
+            printf(" [");
+            printf(_("revoked: %s"),revokestr_from_pk(pk));
+            printf("]\n");
+          }
+        else if (pk->expiredate && !opt.with_colons)
+          {
+            printf(" [");
+            printf(_("expires: %s"),expirestr_from_pk(pk));
+            printf("]\n");
+          }
+        else
+          putchar ('\n');
+
+        if ((mainkey && opt.fingerprint) || opt.fingerprint > 1)
+          print_fingerprint (pk, NULL, 0);
+
+	if (opt.with_colons)
+	  {
+	    if (node->next && node->next->pkt->pkttype == PKT_RING_TRUST)
+	      printf("rtv:1:%u:\n", node->next->pkt->pkt.ring_trust->trustval);
+	  }
 
 	if( mainkey ) {
 	    /* and now list all userids with their signatures */
 	    for( node = node->next; node; node = node->next ) {
 		if( node->pkt->pkttype == PKT_SIGNATURE ) {
-		    if( !any ) {
-			if( node->pkt->pkt.signature->sig_class == 0x20 )
-			    puts("[revoked]");
-			else
-			    putchar('\n');
-			any = 1;
-		    }
 		    list_node(c,  node );
 		}
 		else if( node->pkt->pkttype == PKT_USER_ID ) {
-		    if( any ) {
-			if( opt.with_colons )
-			    printf("%s:::::::::",
-			      node->pkt->pkt.user_id->attrib_data?"uat":"uid");
-			else
-			    printf( "uid%*s", 28, "" );
-		    }
+                    if( opt.with_colons )
+                      printf("%s:::::::::",
+                             node->pkt->pkt.user_id->attrib_data?"uat":"uid");
+                    else
+                      printf( "uid%*s", 28, "" );
 		    print_userid( node->pkt );
 		    if( opt.with_colons )
 			putchar(':');
 		    putchar('\n');
-		    if( opt.fingerprint && !any )
-			print_fingerprint( pk, NULL, 0 );
 		    if( opt.with_colons
                         && node->next
 			&& node->next->pkt->pkttype == PKT_RING_TRUST ) {
@@ -977,38 +1000,12 @@ list_node( CTX c, KBNODE node )
                                node->next->pkt->pkt.ring_trust?
                                node->next->pkt->pkt.ring_trust->trustval : 0);
 		    }
-		    any=1;
 		}
 		else if( node->pkt->pkttype == PKT_PUBLIC_SUBKEY ) {
-		    if( !any ) {
-			putchar('\n');
-			any = 1;
-		    }
-		    list_node(c,  node );
+                  list_node(c,  node );
 		}
 	    }
 	}
-	else
-	  {
-	    /* of subkey */
-	    if( pk->is_revoked )
-	      {
-		printf(" [");
-		printf(_("revoked: %s"),revokestr_from_pk(pk));
-		printf("]");
-	      }
-	    else if( pk->expiredate )
-	      {
-		printf(" [");
-		printf(_("expires: %s"),expirestr_from_pk(pk));
-		printf("]");
-	      }
-	  }
-
-	if( !any )
-	    putchar('\n');
-	if( !mainkey && opt.fingerprint > 1 )
-	    print_fingerprint( pk, NULL, 0 );
     }
     else if( (mainkey = (node->pkt->pkttype == PKT_SECRET_KEY) )
 	     || node->pkt->pkttype == PKT_SECRET_SUBKEY ) {
@@ -1024,55 +1021,39 @@ list_node( CTX c, KBNODE node )
 		   sk->pubkey_algo,
 		   (ulong)keyid[0],(ulong)keyid[1],
 		   colon_datestr_from_sk( sk ),
-		   colon_strtime (sk->expiredate)
-		   /* fixme: add LID */ );
+		   colon_strtime (sk->expiredate));
 	  }
 	else
 	  printf("%s  %4u%c/%s %s ", mainkey? "sec":"ssb",
 		 nbits_from_sk( sk ), pubkey_letter( sk->pubkey_algo ),
 		 keystr_from_sk( sk ), datestr_from_sk( sk ));
+
+        putchar ('\n');
+        if ((mainkey && opt.fingerprint) || opt.fingerprint > 1)
+          print_fingerprint (NULL, sk,0);
+
 	if( mainkey ) {
 	    /* and now list all userids with their signatures */
 	    for( node = node->next; node; node = node->next ) {
 		if( node->pkt->pkttype == PKT_SIGNATURE ) {
-		    if( !any ) {
-			if( node->pkt->pkt.signature->sig_class == 0x20 )
-			    puts("[revoked]");
-			else
-			    putchar('\n');
-			any = 1;
-		    }
 		    list_node(c,  node );
 		}
 		else if( node->pkt->pkttype == PKT_USER_ID ) {
-		    if( any ) {
-			if( opt.with_colons )
-			    printf("%s:::::::::",
-			      node->pkt->pkt.user_id->attrib_data?"uat":"uid");
-			else
-			    printf( "uid%*s", 28, "" );
-		    }
+                    if( opt.with_colons )
+		        printf("%s:::::::::",
+                               node->pkt->pkt.user_id->attrib_data?"uat":"uid");
+                    else
+                        printf( "uid%*s", 28, "" );
 		    print_userid( node->pkt );
 		    if( opt.with_colons )
 			putchar(':');
 		    putchar('\n');
-		    if( opt.fingerprint && !any )
-			print_fingerprint( NULL, sk, 0 );
-		    any=1;
 		}
 		else if( node->pkt->pkttype == PKT_SECRET_SUBKEY ) {
-		    if( !any ) {
-			putchar('\n');
-			any = 1;
-		    }
-		    list_node(c,  node );
+                  list_node(c,  node );
 		}
 	    }
 	}
-	if( !any )
-	    putchar('\n');
-	if( !mainkey && opt.fingerprint > 1 )
-	    print_fingerprint( NULL, sk, 0 );
     }
     else if( node->pkt->pkttype == PKT_SIGNATURE  ) {
 	PKT_signature *sig = node->pkt->pkt.signature;
@@ -1197,7 +1178,7 @@ proc_signature_packets( void *anchor, IOBUF a,
        Using log_error is required because verify_files does not check
        error codes for each file but we want to terminate the process
        with an error. */
-    if (!rc && !c->any_sig_seen)
+    if (!rc && !c->any.sig_seen)
       {
 	write_status_text (STATUS_NODATA, "4");
         log_error (_("no signature found\n"));
@@ -1207,8 +1188,8 @@ proc_signature_packets( void *anchor, IOBUF a,
     /* Propagate the signature seen flag upward. Do this only on
        success so that we won't issue the nodata status several
        times. */
-    if (!rc && c->anchor && c->any_sig_seen)
-      c->anchor->any_sig_seen = 1;
+    if (!rc && c->anchor && c->any.sig_seen)
+      c->anchor->any.sig_seen = 1;
 
     xfree( c );
     return rc;
@@ -1234,7 +1215,7 @@ proc_signature_packets_by_fd (void *anchor, IOBUF a, int signed_data_fd )
      Using log_error is required because verify_files does not check
      error codes for each file but we want to terminate the process
      with an error. */
-  if (!rc && !c->any_sig_seen)
+  if (!rc && !c->any.sig_seen)
     {
       write_status_text (STATUS_NODATA, "4");
       log_error (_("no signature found\n"));
@@ -1243,8 +1224,8 @@ proc_signature_packets_by_fd (void *anchor, IOBUF a, int signed_data_fd )
 
   /* Propagate the signature seen flag upward. Do this only on success
      so that we won't issue the nodata status several times. */
-  if (!rc && c->anchor && c->any_sig_seen)
-    c->anchor->any_sig_seen = 1;
+  if (!rc && c->anchor && c->any.sig_seen)
+    c->anchor->any.sig_seen = 1;
 
   xfree ( c );
   return rc;
@@ -1265,14 +1246,37 @@ proc_encryption_packets( void *anchor, IOBUF a )
 }
 
 
-int
+static int
+check_nesting (CTX c)
+{
+  int level;
+
+  for (level=0; c; c = c->anchor)
+    level++;
+
+  if (level > MAX_NESTING_DEPTH)
+    {
+      log_error ("input data with too deeply nested packets\n");
+      write_status_text (STATUS_UNEXPECTED, "1");
+      return GPG_ERR_BAD_DATA;
+    }
+  return 0;
+}
+
+
+static int
 do_proc_packets( CTX c, IOBUF a )
 {
-    PACKET *pkt = xmalloc( sizeof *pkt );
-    int rc=0;
-    int any_data=0;
+    PACKET *pkt;
+    int rc = 0;
+    int any_data = 0;
     int newpkt;
 
+    rc = check_nesting (c);
+    if (rc)
+      return rc;
+
+    pkt = xmalloc( sizeof *pkt );
     c->iobuf = a;
     init_packet(pkt);
     while( (rc=parse_packet(a, pkt)) != -1 ) {
@@ -1293,7 +1297,7 @@ do_proc_packets( CTX c, IOBUF a )
 	      case PKT_SYMKEY_ENC:  proc_symkey_enc( c, pkt ); break;
 	      case PKT_ENCRYPTED:
 	      case PKT_ENCRYPTED_MDC: proc_encrypted( c, pkt ); break;
-	      case PKT_COMPRESSED:  proc_compressed( c, pkt ); break;
+	      case PKT_COMPRESSED:  rc = proc_compressed( c, pkt ); break;
 	      default: newpkt = 0; break;
 	    }
 	}
@@ -1311,7 +1315,7 @@ do_proc_packets( CTX c, IOBUF a )
 		goto leave;
 	      case PKT_SIGNATURE:   newpkt = add_signature( c, pkt ); break;
 	      case PKT_PLAINTEXT:   proc_plaintext( c, pkt ); break;
-	      case PKT_COMPRESSED:  proc_compressed( c, pkt ); break;
+	      case PKT_COMPRESSED:  rc = proc_compressed( c, pkt ); break;
 	      case PKT_ONEPASS_SIG: newpkt = add_onepass_sig( c, pkt ); break;
               case PKT_GPG_CONTROL: newpkt = add_gpg_control(c, pkt); break;
 	      default: newpkt = 0; break;
@@ -1331,7 +1335,7 @@ do_proc_packets( CTX c, IOBUF a )
 	      case PKT_ENCRYPTED:
 	      case PKT_ENCRYPTED_MDC: proc_encrypted( c, pkt ); break;
 	      case PKT_PLAINTEXT:   proc_plaintext( c, pkt ); break;
-	      case PKT_COMPRESSED:  proc_compressed( c, pkt ); break;
+	      case PKT_COMPRESSED:  rc = proc_compressed( c, pkt ); break;
 	      case PKT_ONEPASS_SIG: newpkt = add_onepass_sig( c, pkt ); break;
 	      case PKT_GPG_CONTROL: newpkt = add_gpg_control(c, pkt); break;
 	      default: newpkt = 0; break;
@@ -1356,13 +1360,17 @@ do_proc_packets( CTX c, IOBUF a )
 	      case PKT_ENCRYPTED:
 	      case PKT_ENCRYPTED_MDC: proc_encrypted( c, pkt ); break;
 	      case PKT_PLAINTEXT:   proc_plaintext( c, pkt ); break;
-	      case PKT_COMPRESSED:  proc_compressed( c, pkt ); break;
+	      case PKT_COMPRESSED:  rc = proc_compressed( c, pkt ); break;
 	      case PKT_ONEPASS_SIG: newpkt = add_onepass_sig( c, pkt ); break;
               case PKT_GPG_CONTROL: newpkt = add_gpg_control(c, pkt); break;
 	      case PKT_RING_TRUST:  newpkt = add_ring_trust( c, pkt ); break;
 	      default: newpkt = 0; break;
 	    }
 	}
+
+        if (rc)
+          goto leave;
+
         /* This is a very ugly construct and frankly, I don't remember why
          * I used it.  Adding the MDC check here is a hack.
          * The right solution is to initiate another context for encrypted
@@ -1372,7 +1380,7 @@ do_proc_packets( CTX c, IOBUF a )
          * Hmmm: Rewrite this whole module here??
          */
 	if( pkt->pkttype != PKT_SIGNATURE && pkt->pkttype != PKT_MDC )
-	    c->have_data = pkt->pkttype == PKT_PLAINTEXT;
+            c->any.data = (pkt->pkttype == PKT_PLAINTEXT);
 
 	if( newpkt == -1 )
 	    ;
@@ -1592,7 +1600,7 @@ check_sig_and_print( CTX c, KBNODE node )
 
   /* (Indendation below not yet changed to GNU style.) */
 
-    astr = gcry_pk_algo_name ( sig->pubkey_algo );
+    astr = openpgp_pk_algo_name ( sig->pubkey_algo );
     if(keystrlen()>8)
       {
 	log_info(_("Signature made %s\n"),asctimestamp(sig->timestamp));
@@ -2010,7 +2018,7 @@ proc_tree( CTX c, KBNODE node )
     }
     else if( node->pkt->pkttype == PKT_ONEPASS_SIG ) {
 	/* check all signatures */
-	if( !c->have_data ) {
+	if( !c->any.data ) {
             int use_textmode = 0;
 
 	    free_md_filter_context( &c->mfx );
@@ -2063,7 +2071,7 @@ proc_tree( CTX c, KBNODE node )
              && node->pkt->pkt.gpg_control->control
                 == CTRLPKT_CLEARSIGN_START ) {
         /* clear text signed message */
-	if( !c->have_data ) {
+	if( !c->any.data ) {
             log_error("cleartext signature without data\n" );
             return;
         }
@@ -2105,7 +2113,7 @@ proc_tree( CTX c, KBNODE node )
 	if( sig->sig_class != 0x00 && sig->sig_class != 0x01 )
 	    log_info(_("standalone signature of class 0x%02x\n"),
 						    sig->sig_class);
-	else if( !c->have_data ) {
+	else if( !c->any.data ) {
 	    /* detached signature */
 	    free_md_filter_context( &c->mfx );
             if (gcry_md_open (&c->mfx.md, sig->digest_algo, 0))
@@ -2138,9 +2146,9 @@ proc_tree( CTX c, KBNODE node )
 		    /*	c->mfx.md2? 0 :(sig->sig_class == 0x01) */
 #endif
             if ( DBG_HASHING ) {
-                gcry_md_start_debug( c->mfx.md, "verify" );
+                gcry_md_debug( c->mfx.md, "verify" );
                 if ( c->mfx.md2  )
-                    gcry_md_start_debug( c->mfx.md2, "verify2" );
+                    gcry_md_debug( c->mfx.md2, "verify2" );
             }
 	    if( c->sigs_only ) {
                 if (c->signed_data.used && c->signed_data.data_fd != -1)

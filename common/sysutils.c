@@ -1,6 +1,7 @@
 /* sysutils.c -  system helpers
  * Copyright (C) 1998, 1999, 2000, 2001, 2003, 2004,
  *               2007, 2008  Free Software Foundation, Inc.
+ * Copyright (C) 2013 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -43,10 +44,15 @@
 # include <sys/resource.h>
 #endif
 #ifdef HAVE_W32_SYSTEM
-# define WINVER 0x0500  /* Required for AllowSetForegroundWindow.  */
+# ifndef WINVER
+#  define WINVER 0x0500  /* Required for AllowSetForegroundWindow.  */
+# endif
+# ifdef HAVE_WINSOCK2_H
+#  include <winsock2.h>
+# endif
 # include <windows.h>
 #endif
-#ifdef HAVE_PTH      
+#ifdef HAVE_PTH
 # include <pth.h>
 #endif
 #include <fcntl.h>
@@ -144,8 +150,8 @@ get_session_marker( size_t *rlen )
         initialized = 1;
         /* Although this marker is guessable it is not easy to use
          * for a faked control packet because an attacker does not
-         * have enough control about the time the verification does 
-         * take place.  Of course, we can add just more random but 
+         * have enough control about the time the verification does
+         * take place.  Of course, we can add just more random but
          * than we need the random generator even for verification
          * tasks - which does not make sense. */
         a = aa ^ (ulong)getpid();
@@ -260,7 +266,7 @@ gnupg_sleep (unsigned int seconds)
      the process will give up its timeslot.  */
   if (!seconds)
     {
-# ifdef HAVE_W32_SYSTEM    
+# ifdef HAVE_W32_SYSTEM
       Sleep (0);
 # else
       sleep (0);
@@ -269,7 +275,7 @@ gnupg_sleep (unsigned int seconds)
   pth_sleep (seconds);
 #else
   /* Fixme:  make sure that a sleep won't wake up to early.  */
-# ifdef HAVE_W32_SYSTEM    
+# ifdef HAVE_W32_SYSTEM
   Sleep (seconds*1000);
 # else
   sleep (seconds);
@@ -291,7 +297,7 @@ translate_sys2libc_fd (gnupg_fd_t fd, int for_write)
 
   if (fd == GNUPG_INVALID_FD)
     return -1;
-  
+
   /* Note that _open_osfhandle is currently defined to take and return
      a long.  */
   x = _open_osfhandle ((long)fd, for_write ? 1 : 0);
@@ -414,7 +420,7 @@ gnupg_tmpfile (void)
    Must be called before we open any files! */
 void
 gnupg_reopen_std (const char *pgmname)
-{  
+{
 #if defined(HAVE_STAT) && !defined(HAVE_W32_SYSTEM)
   struct stat statbuf;
   int did_stdin = 0;
@@ -429,7 +435,7 @@ gnupg_reopen_std (const char *pgmname)
       else
 	did_stdin = 2;
     }
-  
+
   if (fstat (STDOUT_FILENO, &statbuf) == -1 && errno == EBADF)
     {
       if (open ("/dev/null",O_WRONLY) == STDOUT_FILENO)
@@ -478,15 +484,71 @@ gnupg_reopen_std (const char *pgmname)
 
 
 /* Hack required for Windows.  */
-void 
+void
 gnupg_allow_set_foregound_window (pid_t pid)
 {
   if (!pid)
     log_info ("%s called with invalid pid %lu\n",
               "gnupg_allow_set_foregound_window", (unsigned long)pid);
-#ifdef HAVE_W32_SYSTEM  
+#ifdef HAVE_W32_SYSTEM
   else if (!AllowSetForegroundWindow ((pid_t)pid == (pid_t)(-1)?ASFW_ANY:pid))
     log_info ("AllowSetForegroundWindow(%lu) failed: %s\n",
                (unsigned long)pid, w32_strerror (-1));
 #endif
 }
+
+
+#ifdef HAVE_W32_SYSTEM
+/* Return the user's security identifier from the current process.  */
+PSID
+w32_get_user_sid (void)
+{
+  int okay = 0;
+  HANDLE proc = NULL;
+  HANDLE token = NULL;
+  TOKEN_USER *user = NULL;
+  PSID sid = NULL;
+  DWORD tokenlen, sidlen;
+
+  proc = OpenProcess (PROCESS_QUERY_INFORMATION, FALSE, GetCurrentProcessId());
+  if (!proc)
+    goto leave;
+
+  if (!OpenProcessToken (proc, TOKEN_QUERY, &token))
+    goto leave;
+
+  if (!GetTokenInformation (token, TokenUser, NULL, 0, &tokenlen)
+      && GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+    goto leave;
+
+  user = xtrymalloc (tokenlen);
+  if (!user)
+    goto leave;
+
+  if (!GetTokenInformation (token, TokenUser, user, tokenlen, &tokenlen))
+    goto leave;
+  if (!IsValidSid (user->User.Sid))
+    goto leave;
+  sidlen = GetLengthSid (user->User.Sid);
+  sid = xtrymalloc (sidlen);
+  if (!sid)
+    goto leave;
+  if (!CopySid (sidlen, sid, user->User.Sid))
+    goto leave;
+  okay = 1;
+
+ leave:
+  xfree (user);
+  if (token)
+    CloseHandle (token);
+  if (proc)
+    CloseHandle (proc);
+
+  if (!okay)
+    {
+      xfree (sid);
+      sid = NULL;
+    }
+  return sid;
+}
+#endif /*HAVE_W32_SYSTEM*/

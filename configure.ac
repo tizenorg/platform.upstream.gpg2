@@ -22,26 +22,29 @@
 AC_PREREQ(2.61)
 min_automake_version="1.10"
 
-# Remember to change the version number immediately *after* a release.
-# Set my_issvn to "yes" for non-released code.  Remember to run an
-# "svn up" and "autogen.sh" right before creating a distribution.
-m4_define([my_version], [2.0.19])
-m4_define([my_issvn], [no])
+# To build a release you need to create a tag with the version number
+# (git tag -s gnupg-2.n.m) and run "./autogen.sh --force".  Please
+# bump the version number immediately *after* the release and do
+# another commit and push so that the git magic is able to work.
+m4_define([mym4_version], [2.0.26])
 
-m4_define([svn_revision], m4_esyscmd([printf "%d" $(svn info 2>/dev/null \
-          | sed -n '/^Revision:/ s/[^0-9]//gp'|head -1)]))
-m4_define([git_revision], m4_esyscmd([git branch -v 2>/dev/null \
-          | awk '/^\* / {printf "%s",$3}']))
-m4_define([my_full_version], [my_version[]m4_if(my_issvn,[yes],
-          [m4_if(git_revision,[],[-svn[]svn_revision],[-git[]git_revision])])])
+# Below is m4 magic to extract and compute the git revision number,
+# the decimalized short revision number, a beta version string and a
+# flag indicating a development version (mym4_isgit).  Note that the
+# m4 processing is done by autoconf and not during the configure run.
+m4_define([mym4_revision],
+          m4_esyscmd([git rev-parse --short HEAD | tr -d '\n\r']))
+m4_define([mym4_revision_dec],
+          m4_esyscmd_s([echo $((0x$(echo ]mym4_revision[|head -c 4)))]))
+m4_define([mym4_betastring],
+          m4_esyscmd_s([git describe --match 'gnupg-2.[0-9].*[0-9]' --long|\
+                        awk -F- '$3!=0{print"-beta"$3}']))
+m4_define([mym4_isgit],m4_if(mym4_betastring,[],[no],[yes]))
+m4_define([mym4_full_version],[mym4_version[]mym4_betastring])
 
-AC_INIT([gnupg],[my_full_version],[http://bugs.gnupg.org])
-# Set development_version to yes if the minor number is odd or you
-# feel that the default check for a development version is not
-# sufficient.
-development_version=no
+AC_INIT([gnupg],[mym4_full_version], [http://bugs.gnupg.org])
 
-NEED_GPG_ERROR_VERSION=1.7
+NEED_GPG_ERROR_VERSION=1.11
 
 NEED_LIBGCRYPT_API=1
 NEED_LIBGCRYPT_VERSION=1.4.0
@@ -52,7 +55,7 @@ NEED_LIBASSUAN_VERSION=2.0.0
 NEED_KSBA_API=1
 NEED_KSBA_VERSION=1.0.7
 
-
+development_version=mym4_isgit
 PACKAGE=$PACKAGE_NAME
 PACKAGE_GT=${PACKAGE_NAME}2
 VERSION=$PACKAGE_VERSION
@@ -438,6 +441,9 @@ AH_BOTTOM([
 
 /* We don't want the old assuan codes anymore. */
 #define _ASSUAN_ONLY_GPG_ERRORS 1
+
+/* We don't need any of the old gcrypt functions.  */
+#define GCRYPT_NO_DEPRECATED 1
 
 /* We explicitly need to disable PTH's soft mapping as Debian
    currently enables it by default for no reason. */
@@ -973,7 +979,11 @@ AC_DEFINE_UNQUOTED(PRINTABLE_OS_NAME, "$PRINTABLE_OS_NAME",
 #
 # Checking for iconv
 #
+missing_iconv=no
 AM_ICONV
+if test "$am_cv_func_iconv" != yes; then
+   missing_iconv=yes
+fi
 
 
 #
@@ -1107,7 +1117,7 @@ AC_FUNC_VPRINTF
 AC_FUNC_FORK
 AC_CHECK_FUNCS([strerror strlwr tcgetattr mmap])
 AC_CHECK_FUNCS([strcasecmp strncasecmp ctermid times gmtime_r])
-AC_CHECK_FUNCS([unsetenv fcntl ftruncate])
+AC_CHECK_FUNCS([unsetenv fcntl ftruncate inet_ntop])
 AC_CHECK_FUNCS([gettimeofday getrusage getrlimit setrlimit clock_gettime])
 AC_CHECK_FUNCS([atexit raise getpagesize strftime nl_langinfo setlocale])
 AC_CHECK_FUNCS([waitpid wait4 sigaction sigprocmask pipe stat getaddrinfo])
@@ -1252,19 +1262,7 @@ AC_SUBST(ZLIBS)
 # Check for readline support
 GNUPG_CHECK_READLINE
 
-#
-# Allow users to append something to the version string without
-# flagging it as development version.  The user version parts is
-# considered everything after a dash.
-#
-if test "$development_version" != yes; then
-  changequote(,)dnl
-  tmp_pat='[a-zA-Z]'
-  changequote([,])dnl
-  if echo "$VERSION" | sed 's/-.*//' | grep "$tmp_pat" >/dev/null ; then
-    development_version=yes
-  fi
-fi
+
 if test "$development_version" = yes; then
     AC_DEFINE(IS_DEVELOPMENT_VERSION,1,
             [Defined if this is not a regular release])
@@ -1292,22 +1290,36 @@ AC_SUBST(W32SOCKLIBS)
 #
 AC_MSG_NOTICE([checking for cc features])
 if test "$GCC" = yes; then
+    # Check whether gcc does not emit a diagnositc for unknow -Wno-*
+    # options.  This is the case for gcc >= 4.6
+    AC_MSG_CHECKING([if gcc ignores unknown -Wno-* options])
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+#if __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 6 )
+#kickerror
+#endif]],[])],[_gcc_silent_wno=yes],[_gcc_silent_wno=no])
+    AC_MSG_RESULT($_gcc_silent_wno)
+
     # Note that it is okay to use CFLAGS here because this are just
     # warning options and the user should have a chance of overriding
     # them.
     if test "$USE_MAINTAINER_MODE" = "yes"; then
         CFLAGS="$CFLAGS -Wall -Wcast-align -Wshadow -Wstrict-prototypes"
         CFLAGS="$CFLAGS -Wformat -Wno-format-y2k -Wformat-security"
-        AC_MSG_CHECKING([if gcc supports -Wno-missing-field-initializers])
-        _gcc_cflags_save=$CFLAGS
-        CFLAGS="-Wno-missing-field-initializers"
-        AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],
-                          [_gcc_wopt=yes],[_gcc_wopt=no])
-        AC_MSG_RESULT($_gcc_wopt)
-        CFLAGS=$_gcc_cflags_save;
+        if test x"$_gcc_silent_wno" = xyes ; then
+          _gcc_wopt=yes
+        else
+          AC_MSG_CHECKING([if gcc supports -Wno-missing-field-initializers])
+          _gcc_cflags_save=$CFLAGS
+          CFLAGS="-Wno-missing-field-initializers"
+          AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],
+                            [_gcc_wopt=yes],[_gcc_wopt=no])
+          AC_MSG_RESULT($_gcc_wopt)
+          CFLAGS=$_gcc_cflags_save;
+        fi
         if test x"$_gcc_wopt" = xyes ; then
           CFLAGS="$CFLAGS -W -Wno-sign-compare -Wno-missing-field-initializers"
         fi
+
         AC_MSG_CHECKING([if gcc supports -Wdeclaration-after-statement])
         _gcc_cflags_save=$CFLAGS
         CFLAGS="-Wdeclaration-after-statement"
@@ -1322,12 +1334,17 @@ if test "$GCC" = yes; then
         CFLAGS="$CFLAGS -Wall"
     fi
 
-    AC_MSG_CHECKING([if gcc supports -Wno-pointer-sign])
-    _gcc_cflags_save=$CFLAGS
-    CFLAGS="-Wno-pointer-sign"
-    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],[_gcc_psign=yes],[_gcc_psign=no])
-    AC_MSG_RESULT($_gcc_psign)
-    CFLAGS=$_gcc_cflags_save;
+    if test x"$_gcc_silent_wno" = xyes ; then
+      _gcc_psign=yes
+    else
+      AC_MSG_CHECKING([if gcc supports -Wno-pointer-sign])
+      _gcc_cflags_save=$CFLAGS
+      CFLAGS="-Wno-pointer-sign"
+      AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[])],
+                        [_gcc_psign=yes],[_gcc_psign=no])
+      AC_MSG_RESULT($_gcc_psign)
+      CFLAGS=$_gcc_cflags_save;
+    fi
     if test x"$_gcc_psign" = xyes ; then
        CFLAGS="$CFLAGS -Wno-pointer-sign"
     fi
@@ -1340,6 +1357,14 @@ if test "$GCC" = yes; then
     CFLAGS=$_gcc_cflags_save;
     if test x"$_gcc_psign" = xyes ; then
        CFLAGS="$CFLAGS -Wpointer-arith"
+    fi
+
+    # The undocumented option -Wno-psabi suppresses the annoying
+    #   "the ABI of passing union with long double has changed in GCC 4.4"
+    # which is emitted in estream-printf.c but entirely irrelvant
+    # because that union is local to the file.
+    if test x"$_gcc_silent_wno" = xyes ; then
+       CFLAGS="$CFLAGS -Wno-psabi"
     fi
 fi
 
@@ -1424,6 +1449,28 @@ AM_CONDITIONAL(RUN_GPG_TESTS,
 
 
 #
+# Provide information about the build.
+#
+BUILD_REVISION="mym4_revision"
+AC_SUBST(BUILD_REVISION)
+AC_DEFINE_UNQUOTED(BUILD_REVISION, "$BUILD_REVISION",
+                   [GIT commit id revision used to build this package])
+
+changequote(,)dnl
+BUILD_FILEVERSION=`echo "$VERSION" | sed 's/\([0-9.]*\).*/\1./;s/\./,/g'`
+changequote([,])dnl
+BUILD_FILEVERSION="${BUILD_FILEVERSION}mym4_revision_dec"
+AC_SUBST(BUILD_FILEVERSION)
+
+BUILD_TIMESTAMP=`date -u +%Y-%m-%dT%H:%M+0000 2>/dev/null || date`
+AC_SUBST(BUILD_TIMESTAMP)
+AC_DEFINE_UNQUOTED(BUILD_TIMESTAMP, "$BUILD_TIMESTAMP",
+                   [The time this package was configured for a build])
+BUILD_HOSTNAME="$ac_hostname"
+AC_SUBST(BUILD_HOSTNAME)
+
+
+#
 # Print errors here so that they are visible all
 # together and the user can acquire them all together.
 #
@@ -1482,6 +1529,14 @@ if test "$missing_pth" = "yes"; then
 ***]])
    die=yes
 fi
+if test "$missing_iconv" = "yes"; then
+    AC_MSG_NOTICE([[
+***
+*** It is now required to build with support for iconv
+*** Please install a suitable iconv implementation.
+***]])
+   die=yes
+fi
 
 if test "$die" = "yes"; then
     AC_MSG_ERROR([[
@@ -1500,6 +1555,7 @@ gl/Makefile
 include/Makefile
 jnlib/Makefile
 common/Makefile
+common/w32info-rc.h
 kbx/Makefile
 g10/Makefile
 sm/Makefile
@@ -1521,6 +1577,7 @@ AC_OUTPUT
 echo "
         GnuPG v${VERSION} has been configured as follows:
 
+        Revision:  mym4_revision  (mym4_revision_dec)
         Platform:  $PRINTABLE_OS_NAME ($host)
 
         OpenPGP:   $build_gpg

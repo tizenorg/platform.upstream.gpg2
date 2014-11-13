@@ -523,8 +523,8 @@ my_strusage( int level )
       break;
     case 41:
       p = _("Syntax: gpgsm [options] [files]\n"
-            "sign, check, encrypt or decrypt using the S/MIME protocol\n"
-            "default operation depends on the input data\n");
+            "Sign, check, encrypt or decrypt using the S/MIME protocol\n"
+            "Default operation depends on the input data\n");
       break;
 
     case 20:
@@ -951,7 +951,10 @@ main ( int argc, char **argv)
           default_config = 0;
 	}
       else if (pargs.r_opt == oNoOptions)
-        default_config = 0; /* --no-options */
+        {
+          default_config = 0; /* --no-options */
+          opt.no_homedir_creation = 1;
+        }
       else if (pargs.r_opt == oHomedir)
         opt.homedir = pargs.r.ret_str;
       else if (pargs.r_opt == aCallProtectTool)
@@ -1246,7 +1249,7 @@ main ( int argc, char **argv)
               goto next_pass;
 	    }
           break;
-        case oNoOptions: break; /* no-options */
+        case oNoOptions: opt.no_homedir_creation = 1; break; /* no-options */
         case oHomedir: opt.homedir = pargs.r.ret_str; break;
         case oAgentProgram: opt.agent_program = pargs.r.ret_str;  break;
 

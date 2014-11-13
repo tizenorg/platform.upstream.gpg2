@@ -76,6 +76,7 @@
 #define es_fopen              _ESTREAM_PREFIX(es_fopen)
 #define es_mopen              _ESTREAM_PREFIX(es_mopen)
 #define es_fopenmem           _ESTREAM_PREFIX(es_fopenmem)
+#define es_fopenmem_init      _ESTREAM_PREFIX(es_fopenmem_init)
 #define es_fdopen             _ESTREAM_PREFIX(es_fdopen)
 #define es_fdopen_nc          _ESTREAM_PREFIX(es_fdopen_nc)
 #define es_fpopen             _ESTREAM_PREFIX(es_fpopen)
@@ -85,6 +86,7 @@
 #define es_freopen            _ESTREAM_PREFIX(es_freopen)
 #define es_fopencookie        _ESTREAM_PREFIX(es_fopencookie)
 #define es_fclose             _ESTREAM_PREFIX(es_fclose)
+#define es_fclose_snatch      _ESTREAM_PREFIX(es_fclose_snatch)
 #define es_fileno             _ESTREAM_PREFIX(es_fileno)
 #define es_fileno_unlocked    _ESTREAM_PREFIX(es_fileno_unlocked)
 #define es_flockfile          _ESTREAM_PREFIX(es_flockfile)
@@ -242,6 +244,8 @@ estream_t es_mopen (unsigned char *ES__RESTRICT data,
 		    void (*func_free) (void *mem),
 		    const char *ES__RESTRICT mode);
 estream_t es_fopenmem (size_t memlimit, const char *ES__RESTRICT mode);
+estream_t es_fopenmem_init (size_t memlimit, const char *ES__RESTRICT mode,
+                            const void *data, size_t datalen);
 estream_t es_fdopen (int filedes, const char *mode);
 estream_t es_fdopen_nc (int filedes, const char *mode);
 estream_t es_fpopen (FILE *fp, const char *mode);
@@ -253,6 +257,7 @@ estream_t es_fopencookie (void *ES__RESTRICT cookie,
 			  const char *ES__RESTRICT mode,
 			  es_cookie_io_functions_t functions);
 int es_fclose (estream_t stream);
+int es_fclose_snatch (estream_t stream, void **r_buffer, size_t *r_buflen);
 int es_fileno (estream_t stream);
 int es_fileno_unlocked (estream_t stream);
 

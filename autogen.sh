@@ -62,7 +62,7 @@ if test "$1" = "--build-w32"; then
 
     # Locate the cross compiler
     crossbindir=
-    for host in i586-mingw32msvc i386-mingw32msvc mingw32; do
+    for host in i686-w64-mingw32 i586-mingw32msvc i386-mingw32msvc mingw32; do
         if ${host}-gcc --version >/dev/null 2>&1 ; then
             crossbindir=/usr/${host}/bin
             conf_CC="CC=${host}-gcc"
@@ -84,7 +84,7 @@ if test "$1" = "--build-w32"; then
         fi
     fi
 
-    ./configure --enable-maintainer-mode --prefix=${w32root}  \
+    $tsdir/configure --enable-maintainer-mode --prefix=${w32root}  \
              --host=${host} --build=${build} \
              --enable-gpgtar \
              --with-gpg-error-prefix=${w32root} \
@@ -94,6 +94,7 @@ if test "$1" = "--build-w32"; then
 	     --with-zlib=${w32root} \
 	     --with-regex=${w32root} \
              --with-pth-prefix=${w32root} \
+             --with-libiconv-prefix=${w32root} \
              --with-adns=${w32root} "$@"
     rc=$?
     exit $rc
@@ -209,7 +210,7 @@ if [ -d .git ]; then
     To deactivate this pre-commit hook again move .git/hooks/pre-commit
     and .git/hooks/pre-commit.sample out of the way.
 EOF
-      cp -av .git/hooks/pre-commit.sample .git/hooks/pre-commit
+      cp .git/hooks/pre-commit.sample .git/hooks/pre-commit
       chmod -c +x  .git/hooks/pre-commit
   fi
   tmp=$(git config --get filter.cleanpo.clean)
@@ -223,7 +224,7 @@ EOF
     cat <<EOF >&2
 *** Activating commit log message check hook. ***
 EOF
-      cp -av scripts/git-hooks/commit-msg .git/hooks/commit-msg
+      cp scripts/git-hooks/commit-msg .git/hooks/commit-msg
       chmod -c +x  .git/hooks/commit-msg
   fi
 fi

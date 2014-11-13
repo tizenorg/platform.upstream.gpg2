@@ -40,7 +40,10 @@
 #ifdef HAVE_W32_SYSTEM
 #include <time.h>
 #include <process.h>
-#include <windows.h> 
+#ifdef HAVE_WINSOCK2_H
+# include <winsock2.h>
+#endif
+#include <windows.h>
 #include <shlobj.h>
 #ifndef CSIDL_APPDATA
 #define CSIDL_APPDATA 0x001a
@@ -81,7 +84,7 @@ string_count_chr (const char *string, int c)
 #ifdef ENABLE_SELINUX_HACKS
 /* A object and a global variable to keep track of files marked as
    secured. */
-struct secured_file_item 
+struct secured_file_item
 {
   struct secured_file_item *next;
   ino_t ino;
@@ -106,7 +109,7 @@ register_secured_file (const char *fname)
 
   /* Note that we stop immediatley if something goes wrong here. */
   if (stat (fname, &buf))
-    log_fatal (_("fstat of `%s' failed in %s: %s\n"), fname, 
+    log_fatal (_("fstat of `%s' failed in %s: %s\n"), fname,
                "register_secured_file", strerror (errno));
 /*   log_debug ("registering `%s' i=%lu.%lu\n", fname, */
 /*              (unsigned long)buf.st_dev, (unsigned long)buf.st_ino); */
@@ -160,8 +163,8 @@ unregister_secured_file (const char *fname)
 }
 
 /* Return true if FD is corresponds to a secured file.  Using -1 for
-   FS is allowed and will return false. */ 
-int 
+   FS is allowed and will return false. */
+int
 is_secured_file (int fd)
 {
 #ifdef ENABLE_SELINUX_HACKS
@@ -175,7 +178,7 @@ is_secured_file (int fd)
      secure if something went wrong. */
   if (fstat (fd, &buf))
     {
-      log_error (_("fstat(%d) failed in %s: %s\n"), fd, 
+      log_error (_("fstat(%d) failed in %s: %s\n"), fd,
                  "is_secured_file", strerror (errno));
       return 1;
     }
@@ -195,8 +198,8 @@ is_secured_file (int fd)
 /* Return true if FNAME is corresponds to a secured file.  Using NULL,
    "" or "-" for FS is allowed and will return false. This function is
    used before creating a file, thus it won't fail if the file does
-   not exist. */ 
-int 
+   not exist. */
+int
 is_secured_filename (const char *fname)
 {
 #ifdef ENABLE_SELINUX_HACKS
@@ -204,7 +207,7 @@ is_secured_filename (const char *fname)
   struct secured_file_item *sf;
 
   if (iobuf_is_pipe_filename (fname) || !*fname)
-    return 0; 
+    return 0;
 
   /* Note that we print out a error here and claim that a file is
      secure if something went wrong. */
@@ -294,7 +297,7 @@ print_pubkey_algo_note( int algo )
 	{
 	  warn=1;
 	  log_info (_("WARNING: using experimental public key algorithm %s\n"),
-		    gcry_pk_algo_name (algo));
+		    openpgp_pk_algo_name (algo));
 	}
     }
   else if (algo == 20)
@@ -345,9 +348,9 @@ map_cipher_openpgp_to_gcry (int algo)
 {
   switch (algo)
     {
-    case CIPHER_ALGO_CAMELLIA128: return 310; 
-    case CIPHER_ALGO_CAMELLIA192: return 311; 
-    case CIPHER_ALGO_CAMELLIA256: return 312; 
+    case CIPHER_ALGO_CAMELLIA128: return 310;
+    case CIPHER_ALGO_CAMELLIA192: return 311;
+    case CIPHER_ALGO_CAMELLIA256: return 312;
     default: return algo;
     }
 }
@@ -367,7 +370,7 @@ map_cipher_gcry_to_openpgp (int algo)
 
 
 /* Return the block length of an OpenPGP cipher algorithm.  */
-int 
+int
 openpgp_cipher_blocklen (int algo)
 {
   /* We use the numbers from OpenPGP to be sure that we get the right
@@ -407,24 +410,44 @@ openpgp_cipher_test_algo( int algo )
    string representation of the algorithm name.  For unknown algorithm
    IDs this function returns "?".  */
 const char *
-openpgp_cipher_algo_name (int algo) 
+openpgp_cipher_algo_name (int algo)
 {
   return gcry_cipher_algo_name (map_cipher_openpgp_to_gcry (algo));
 }
 
+
+/* Map OpenPGP public key algorithm numbers to those used by
+   Libgcrypt.  */
+int
+map_pk_openpgp_to_gcry (int algo)
+{
+  switch (algo)
+    {
+    case PUBKEY_ALGO_ECDSA:     return 301 /*GCRY_PK_ECDSA*/;
+    case PUBKEY_ALGO_ECDH:      return 302 /*GCRY_PK_ECDH*/;
+    case PUBKEY_ALGO_ELGAMAL_E: return GCRY_PK_ELG;
+    default: return algo;
+    }
+}
+
+
 int
 openpgp_pk_test_algo( int algo )
 {
+  /* ECC is not yet supported even if supported by Libgcrypt.  */
+  if (algo == PUBKEY_ALGO_ECDH || algo == PUBKEY_ALGO_ECDSA)
+    return gpg_error (GPG_ERR_PUBKEY_ALGO);
+
   /* Dont't allow type 20 keys unless in rfc2440 mode.  */
   if (!RFC2440 && algo == 20)
     return gpg_error (GPG_ERR_PUBKEY_ALGO);
-    
-  if (algo == GCRY_PK_ELG_E)
+
+  if (algo == PUBKEY_ALGO_ELGAMAL_E)
     algo = GCRY_PK_ELG;
 
   if (algo < 0 || algo > 110)
     return gpg_error (GPG_ERR_PUBKEY_ALGO);
-  return gcry_pk_test_algo (algo);
+  return gcry_pk_test_algo (map_pk_openpgp_to_gcry (algo));
 }
 
 int
@@ -432,26 +455,31 @@ openpgp_pk_test_algo2( int algo, unsigned int use )
 {
   size_t use_buf = use;
 
+  /* ECC is not yet supported even if supported by Libgcrypt.  */
+  if (algo == PUBKEY_ALGO_ECDH || algo == PUBKEY_ALGO_ECDSA)
+    return gpg_error (GPG_ERR_PUBKEY_ALGO);
+
   /* Dont't allow type 20 keys unless in rfc2440 mode.  */
   if (!RFC2440 && algo == 20)
     return gpg_error (GPG_ERR_PUBKEY_ALGO);
 
-  if (algo == GCRY_PK_ELG_E)
+  if (algo == PUBKEY_ALGO_ELGAMAL_E)
     algo = GCRY_PK_ELG;
 
   if (algo < 0 || algo > 110)
     return gpg_error (GPG_ERR_PUBKEY_ALGO);
 
-  return gcry_pk_algo_info (algo, GCRYCTL_TEST_ALGO, NULL, &use_buf);
+  return gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
+                            GCRYCTL_TEST_ALGO, NULL, &use_buf);
 }
 
-int 
+int
 openpgp_pk_algo_usage ( int algo )
 {
-    int use = 0; 
-    
+    int use = 0;
+
     /* They are hardwired in gpg 1.0. */
-    switch ( algo ) {    
+    switch ( algo ) {
       case PUBKEY_ALGO_RSA:
           use = (PUBKEY_USAGE_CERT | PUBKEY_USAGE_SIG
                  | PUBKEY_USAGE_ENC | PUBKEY_USAGE_AUTH);
@@ -469,7 +497,13 @@ openpgp_pk_algo_usage ( int algo )
       case PUBKEY_ALGO_ELGAMAL_E:
           use = PUBKEY_USAGE_ENC;
           break;
-      case PUBKEY_ALGO_DSA:  
+      case PUBKEY_ALGO_DSA:
+          use = PUBKEY_USAGE_CERT | PUBKEY_USAGE_SIG | PUBKEY_USAGE_AUTH;
+          break;
+      case PUBKEY_ALGO_ECDH:
+          use = PUBKEY_USAGE_ENC;
+          break;
+      case PUBKEY_ALGO_ECDSA:
           use = PUBKEY_USAGE_CERT | PUBKEY_USAGE_SIG | PUBKEY_USAGE_AUTH;
           break;
       default:
@@ -477,6 +511,17 @@ openpgp_pk_algo_usage ( int algo )
     }
     return use;
 }
+
+
+/* Map the OpenPGP cipher algorithm whose ID is contained in ALGORITHM to a
+   string representation of the algorithm name.  For unknown algorithm
+   IDs this function returns "?".  */
+const char *
+openpgp_pk_algo_name (int algo)
+{
+  return gcry_pk_algo_name (map_pk_openpgp_to_gcry (algo));
+}
+
 
 int
 openpgp_md_test_algo( int algo )
@@ -509,7 +554,7 @@ idea_cipher_warn(int show)
 #endif
 
 
-static unsigned long 
+static unsigned long
 get_signature_count (PKT_secret_key *sk)
 {
 #ifdef ENABLE_CARD_SUPPORT
@@ -518,7 +563,7 @@ get_signature_count (PKT_secret_key *sk)
       struct agent_card_info_s info;
       if(agent_scd_getattr("SIG-COUNTER",&info)==0)
 	return info.sig_counter;
-    }  
+    }
 #endif
 
   /* How to do this without a card? */
@@ -603,13 +648,30 @@ pct_expando(const char *string,struct expando_args *args)
 		}
 	      break;
 
+	    case 'U': /* z-base-32 encoded user id hash. */
+              if (args->namehash)
+                {
+                  char *tmp = zb32_encode (args->namehash, 8*20);
+                  if (tmp)
+                    {
+                      if (idx + strlen (tmp) < maxlen)
+                        {
+                          strcpy (ret+idx, tmp);
+                          idx += strlen (tmp);
+                        }
+                      xfree (tmp);
+                      done = 1;
+                    }
+                }
+	      break;
+
 	    case 'c': /* signature count from card, if any. */
 	      if(idx+10<maxlen)
 		{
 		  sprintf(&ret[idx],"%lu",get_signature_count(args->sk));
 		  idx+=strlen(&ret[idx]);
 		  done=1;
-		}	      
+		}
 	      break;
 
 	    case 'p': /* primary pk fingerprint of a sk */
@@ -678,7 +740,7 @@ pct_expando(const char *string,struct expando_args *args)
 		  case 't': /* e.g. "jpg" */
 		    str=image_type_to_string(args->imagetype,0);
 		    break;
-		  
+
 		  case 'T': /* e.g. "image/jpeg" */
 		    str=image_type_to_string(args->imagetype,2);
 		    break;
@@ -777,7 +839,7 @@ deprecated_command (const char *name)
 
 
 void
-obsolete_option (const char *configname, unsigned int configlineno, 
+obsolete_option (const char *configname, unsigned int configlineno,
                  const char *name)
 {
   if(configname)
@@ -793,9 +855,9 @@ obsolete_option (const char *configname, unsigned int configlineno,
  * Wrapper around gcry_cipher_map_name to provide a fallback using the
  * "Sn" syntax as used by the preference strings.
  */
-int 
-string_to_cipher_algo (const char *string) 
-{ 
+int
+string_to_cipher_algo (const char *string)
+{
   int val;
 
   val = map_cipher_gcry_to_openpgp (gcry_cipher_map_name (string));
@@ -816,9 +878,9 @@ string_to_cipher_algo (const char *string)
  * Wrapper around gcry_md_map_name to provide a fallback using the
  * "Hn" syntax as used by the preference strings.
  */
-int 
-string_to_digest_algo (const char *string) 
-{ 
+int
+string_to_digest_algo (const char *string)
+{
   int val;
 
   val = gcry_md_map_name (string);
@@ -1223,7 +1285,7 @@ has_invalid_email_chars (const char *s)
   const char *valid_chars=
     "01234567890_-.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-  for ( ; *s; s++ ) 
+  for ( ; *s; s++ )
     {
       if ( (*s & 0x80) )
         continue; /* We only care about ASCII.  */
@@ -1306,9 +1368,19 @@ pubkey_get_npkey( int algo )
 {
   size_t n;
 
+  /* ECC is special in that domain parameters are given by an OID.  */
+  if (algo == PUBKEY_ALGO_ECDSA)
+    return 0; /* We don't support the key format.  */
+  else if (algo == PUBKEY_ALGO_ECDH)
+    return 0; /* We don't support the key format.  */
+
   if (algo == GCRY_PK_ELG_E)
     algo = GCRY_PK_ELG;
-  if (gcry_pk_algo_info( algo, GCRYCTL_GET_ALGO_NPKEY, NULL, &n))
+  else if (algo == GCRY_PK_RSA_E || algo == GCRY_PK_RSA_S)
+    algo = GCRY_PK_RSA;
+
+  if (gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
+                         GCRYCTL_GET_ALGO_NPKEY, NULL, &n))
     n = 0;
   return n;
 }
@@ -1319,9 +1391,19 @@ pubkey_get_nskey( int algo )
 {
   size_t n;
 
+  /* ECC is special in that domain parameters are given by an OID.  */
+  if (algo == PUBKEY_ALGO_ECDSA)
+    return 0; /* We don't support the key format.  */
+  else if (algo == PUBKEY_ALGO_ECDH)
+    return 0; /* We don't support the key format.  */
+
   if (algo == GCRY_PK_ELG_E)
     algo = GCRY_PK_ELG;
-  if (gcry_pk_algo_info( algo, GCRYCTL_GET_ALGO_NSKEY, NULL, &n ))
+  else if (algo == GCRY_PK_RSA_E || algo == GCRY_PK_RSA_S)
+    algo = GCRY_PK_RSA;
+
+  if (gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
+                         GCRYCTL_GET_ALGO_NSKEY, NULL, &n ))
     n = 0;
   return n;
 }
@@ -1332,9 +1414,19 @@ pubkey_get_nsig( int algo )
 {
   size_t n;
 
+  /* ECC is special.  */
+  if (algo == PUBKEY_ALGO_ECDSA)
+    return 0;  /* We don't support the key format.  */
+  else if (algo == PUBKEY_ALGO_ECDH)
+    return 0;
+
   if (algo == GCRY_PK_ELG_E)
     algo = GCRY_PK_ELG;
-  if (gcry_pk_algo_info( algo, GCRYCTL_GET_ALGO_NSIGN, NULL, &n))
+  else if (algo == GCRY_PK_RSA_E || algo == GCRY_PK_RSA_S)
+    algo = GCRY_PK_RSA;
+
+  if (gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
+                         GCRYCTL_GET_ALGO_NSIGN, NULL, &n))
     n = 0;
   return n;
 }
@@ -1344,10 +1436,20 @@ int
 pubkey_get_nenc( int algo )
 {
   size_t n;
-  
+
+  /* ECC is special.  */
+  if (algo == PUBKEY_ALGO_ECDSA)
+    return 0;
+  else if (algo == PUBKEY_ALGO_ECDH)
+    return 0;  /* We don't support the key format.  */
+
   if (algo == GCRY_PK_ELG_E)
     algo = GCRY_PK_ELG;
-  if (gcry_pk_algo_info( algo, GCRYCTL_GET_ALGO_NENCR, NULL, &n ))
+  else if (algo == GCRY_PK_RSA_E || algo == GCRY_PK_RSA_S)
+    algo = GCRY_PK_RSA;
+
+  if (gcry_pk_algo_info (map_pk_openpgp_to_gcry (algo),
+                         GCRYCTL_GET_ALGO_NENCR, NULL, &n ))
     n = 0;
   return n;
 }
@@ -1370,7 +1472,9 @@ pubkey_nbits( int algo, gcry_mpi_t *key )
 			      "(public-key(elg(p%m)(g%m)(y%m)))",
 				  key[0], key[1], key[2] );
     }
-    else if( algo == GCRY_PK_RSA ) {
+    else if (algo == GCRY_PK_RSA
+             || algo == GCRY_PK_RSA_S
+             || algo == GCRY_PK_RSA_E ) {
 	rc = gcry_sexp_build ( &sexp, NULL,
 			      "(public-key(rsa(n%m)(e%m)))",
 				  key[0], key[1] );

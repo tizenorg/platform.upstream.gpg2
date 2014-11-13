@@ -20,13 +20,17 @@ EXTRA_DIST = \
 	Manifest watchgnupg.c ChangeLog-2011 \
 	addgnupghome applygnupgdefaults gpgsm-gencert.sh \
 	lspgpot mail-signed-keys convert-from-106 sockprox.c \
-	ccidmon.c
+	ccidmon.c gpg-connect-agent-w32info.rc
 
 
 AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/intl -I$(top_srcdir)/common
 include $(top_srcdir)/am/cmacros.am
 
-AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(LIBASSUAN_CFLAGS)
+if HAVE_W32_SYSTEM
+resource_objs += gpg-connect-agent-w32info.o
+endif
+
+AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) $(LIBASSUAN_CFLAGS)
 
 sbin_SCRIPTS = addgnupghome applygnupgdefaults
 
@@ -89,19 +93,20 @@ gpg_connect_agent_SOURCES = gpg-connect-agent.c no-libgcrypt.c
 # FIXME: remove PTH_LIBS (why do we need them at all?)
 gpg_connect_agent_LDADD = ../common/libgpgrl.a $(common_libs) \
 	                  $(LIBASSUAN_LIBS) $(PTH_LIBS) $(GPG_ERROR_LIBS) \
-                          $(LIBREADLINE) $(LIBINTL) $(NETLIBS) $(LIBICONV)
+                          $(LIBREADLINE) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
+	                  $(resource_objs)
 
 gpgkey2ssh_SOURCES = gpgkey2ssh.c
-gpgkey2ssh_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
+gpgkey2ssh_CFLAGS =  $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
 # common sucks in jnlib, via use of BUG() in an inline function, which
 # some compilers do not eliminate.
 gpgkey2ssh_LDADD = $(common_libs) \
-                   $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV)
+                   $(GPG_ERROR_LIBS) $(LIBGCRYPT_LIBS) $(LIBINTL) $(LIBICONV)
 
 
 if !DISABLE_REGEX
 gpg_check_pattern_SOURCES = gpg-check-pattern.c
-gpg_check_pattern_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
+gpg_check_pattern_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
 gpg_check_pattern_LDADD = $(common_libs) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
                           $(LIBINTL) $(LIBICONV) $(W32SOCKLIBS)
 endif
@@ -113,7 +118,8 @@ gpgtar_SOURCES = \
 	gpgtar-list.c \
 	no-libgcrypt.c
 gpgtar_CFLAGS = $(GPG_ERROR_CFLAGS) $(PTH_CFLAGS)
-gpgtar_LDADD = $(common_libs) $(GPG_ERROR_LIBS) $(NETLIBS) $(W32SOCKLIBS)
+gpgtar_LDADD = $(common_libs) $(GPG_ERROR_LIBS) \
+               $(LIBINTL) $(NETLIBS) $(LIBICONV) $(W32SOCKLIBS)
 
 # Make sure that all libs are build before we use them.  This is
 # important for things like make -j2.

@@ -48,6 +48,7 @@
 #include "i18n.h"
 #include "sysutils.h"
 #include "app-common.h"
+#include "iso7816.h"
 #include "apdu.h"
 #include "ccid-driver.h"
 #include "mkdtemp.h"
@@ -87,10 +88,11 @@ enum cmd_and_opt_values
   opcscDriver,
   oDisableCCID,
   oDisableOpenSC,
-  oDisableKeypad,
+  oDisablePinpad,
   oAllowAdmin,
   oDenyAdmin,
   oDisableApplication,
+  oEnablePinpadVarlen,
   oDebugDisableTicker
 };
 
@@ -137,12 +139,17 @@ static ARGPARSE_OPTS opts[] = {
                 /* end --disable-ccid */),
   ARGPARSE_s_u (oCardTimeout, "card-timeout",
                 N_("|N|disconnect the card after N seconds of inactivity")),
-  ARGPARSE_s_n (oDisableKeypad, "disable-keypad",
-                N_("do not use a reader's keypad")),
+
+  ARGPARSE_s_n (oDisablePinpad, "disable-pinpad",
+                N_("do not use a reader's pinpad")),
+  ARGPARSE_ignore (300, "disable-keypad"),
+
   ARGPARSE_s_n (oAllowAdmin, "allow-admin", "@"),
   ARGPARSE_s_n (oDenyAdmin, "deny-admin",
                 N_("deny the use of admin card commands")),
   ARGPARSE_s_s (oDisableApplication, "disable-application", "@"),
+  ARGPARSE_s_n (oEnablePinpadVarlen, "enable-pinpad-varlen",
+                N_("use variable length input for pinpad")),
 
   ARGPARSE_end ()
 };
@@ -205,12 +212,15 @@ static void handle_connections (int listen_fd);
 /* Pth wrapper function definitions. */
 ASSUAN_SYSTEM_PTH_IMPL;
 
+#if GCRYPT_VERSION_NUMBER < 0x010600
 GCRY_THREAD_OPTION_PTH_IMPL;
+#if GCRY_THREAD_OPTION_VERSION < 1
 static int fixed_gcry_pth_init (void)
 {
   return pth_self ()? 0 : (pth_init () == FALSE) ? errno : 0;
 }
-
+#endif
+#endif /*GCRYPT_VERSION_NUMBER < 0x010600*/
 
 
 static char *
@@ -372,7 +382,6 @@ main (int argc, char **argv )
 {
   ARGPARSE_ARGS pargs;
   int orig_argc;
-  gpg_error_t err;
   char **orig_argv;
   FILE *configfp = NULL;
   char *configname = NULL;
@@ -407,15 +416,23 @@ main (int argc, char **argv )
   init_common_subsystems ();
 
 
-  /* Libgcrypt requires us to register the threading model first.
+#if GCRYPT_VERSION_NUMBER < 0x010600
+  /* Libgcrypt < 1.6 requires us to register the threading model first.
      Note that this will also do the pth_init. */
+  {
+    gpg_error_t err;
+#if GCRY_THREAD_OPTION_VERSION < 1
   gcry_threads_pth.init = fixed_gcry_pth_init;
+#endif
+
   err = gcry_control (GCRYCTL_SET_THREAD_CBS, &gcry_threads_pth);
   if (err)
     {
       log_fatal ("can't register GNU Pth with Libgcrypt: %s\n",
                  gpg_strerror (err));
     }
+  }
+#endif /*GCRYPT_VERSION_NUMBER < 0x010600*/
 
   /* Check that the libraries are suitable.  Do it here because
      the option parsing may need services of the library */
@@ -579,7 +596,7 @@ main (int argc, char **argv )
         case oDisableCCID: opt.disable_ccid = 1; break;
         case oDisableOpenSC: break;
 
-        case oDisableKeypad: opt.disable_keypad = 1; break;
+        case oDisablePinpad: opt.disable_pinpad = 1; break;
 
         case oAllowAdmin: /* Dummy because allow is now the default.  */
           break;
@@ -590,6 +607,8 @@ main (int argc, char **argv )
         case oDisableApplication:
           add_to_strlist (&opt.disabled_applications, pargs.r.ret_str);
           break;
+
+	case oEnablePinpadVarlen: opt.enable_pinpad_varlen = 1; break;
 
         default:
           pargs.err = configfp? ARGPARSE_PRINT_WARNING:ARGPARSE_PRINT_ERROR;
@@ -670,8 +689,9 @@ main (int argc, char **argv )
       printf ("disable-ccid:%lu:\n", GC_OPT_FLAG_NONE );
 #endif
       printf ("deny-admin:%lu:\n", GC_OPT_FLAG_NONE );
-      printf ("disable-keypad:%lu:\n", GC_OPT_FLAG_NONE );
+      printf ("disable-pinpad:%lu:\n", GC_OPT_FLAG_NONE );
       printf ("card-timeout:%lu:%d:\n", GC_OPT_FLAG_DEFAULT, 0);
+      printf ("enable-pinpad-varlen:%lu:\n", GC_OPT_FLAG_NONE );
 
       scd_exit (0);
     }

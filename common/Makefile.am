@@ -19,7 +19,8 @@
 ## Process this file with automake to produce Makefile.in
 
 EXTRA_DIST = mkstrtable.awk exaudit.awk exstatus.awk \
-             audit-events.h status-codes.h ChangeLog-2011
+             audit-events.h status-codes.h ChangeLog-2011 \
+	     w32info-rc.h.in gnupg.ico
 
 noinst_LIBRARIES = libcommon.a libcommonpth.a libsimple-pwquery.a libgpgrl.a
 noinst_PROGRAMS = $(module_tests) $(module_maint_tests)
@@ -27,11 +28,11 @@ TESTS = $(module_tests)
 
 BUILT_SOURCES = audit-events.h status-codes.h
 
-CLEANFILES = audit-events.h status-codes.h
+MAINTAINERCLEANFILES = audit-events.h status-codes.h
 
 AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/intl
 
-AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS)
+AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS)
 
 include $(top_srcdir)/am/cmacros.am
 
@@ -51,6 +52,7 @@ common_sources = \
 	gettime.c \
 	yesno.c \
 	b64enc.c b64dec.c \
+	zb32.c \
 	convert.c \
 	percent.c \
 	miscellaneous.c \

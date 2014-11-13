@@ -1,8 +1,8 @@
-This is /home/wk/w/gnupg-stable/doc/gnupg.info, produced by makeinfo
-version 4.13 from /home/wk/w/gnupg-stable/doc/gnupg.texi.
+This is /home/wk/s/gnupg/doc/gnupg.info, produced by makeinfo version
+4.13 from /home/wk/s/gnupg/doc/gnupg.texi.
 
-This is the `The GNU Privacy Guard Manual' (version 2.0.19,
-March 2012).
+This is the `The GNU Privacy Guard Manual' (version 2.0.26,
+August 2014).
 
    Copyright (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software
 Foundation, Inc.
@@ -26,8 +26,8 @@ File: gnupg.info,  Node: Top,  Next: Installation,  Up: (dir)
 Using the GNU Privacy Guard
 ***************************
 
-This is the `The GNU Privacy Guard Manual' (version 2.0.19,
-March 2012).
+This is the `The GNU Privacy Guard Manual' (version 2.0.26,
+August 2014).
 
    Copyright (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software
 Foundation, Inc.
@@ -418,12 +418,14 @@ File: gnupg.info,  Node: Agent Options,  Next: Agent Configuration,  Prev: Agent
 `--max-cache-ttl N'
      Set the maximum time a cache entry is valid to N seconds.  After
      this time a cache entry will be expired even if it has been
-     accessed recently.  The default is 2 hours (7200 seconds).
+     accessed recently or has been set using `gpg-preset-passphrase'.
+     The default is 2 hours (7200 seconds).
 
 `--max-cache-ttl-ssh N'
      Set the maximum time a cache entry used for SSH keys is valid to N
      seconds.  After this time a cache entry will be expired even if it
-     has been accessed recently.  The default is 2 hours (7200 seconds).
+     has been accessed recently or has been set using
+     `gpg-preset-passphrase'.  The default is 2 hours (7200 seconds).
 
 `--enforce-passphrase-constraints'
      Enforce the passphrase constraints by not allowing the user to
@@ -699,10 +701,11 @@ A running `gpg-agent' may be controlled by signals, i.e. using the
      read again.  Only certain options are honored: `quiet', `verbose',
      `debug', `debug-all', `debug-level', `no-grab',
      `pinentry-program', `default-cache-ttl', `max-cache-ttl',
-     `ignore-cache-for-signing', `allow-mark-trusted' and
-     `disable-scdaemon'.  `scdaemon-program' is also supported but due
-     to the current implementation, which calls the scdaemon only once,
-     it is not of much use unless you manually kill the scdaemon.
+     `ignore-cache-for-signing', `allow-mark-trusted',
+     `disable-scdaemon', and `disable-check-own-socket'.
+     `scdaemon-program' is also supported but due to the current
+     implementation, which calls the scdaemon only once, it is not of
+     much use unless you manually kill the scdaemon.
 
 `SIGTERM'
      Shuts down the process but waits until all current requests are
@@ -783,6 +786,7 @@ secret keys.
 * Agent EXPORT::          Exporting a Secret Key
 * Agent ISTRUSTED::       Importing a Root Certificate
 * Agent GET_PASSPHRASE::  Ask for a passphrase
+* Agent CLEAR_PASSPHRASE:: Expire a cached passphrase
 * Agent GET_CONFIRMATION:: Ask for confirmation
 * Agent HAVEKEY::         Check whether a key is available
 * Agent LEARN::           Register a smartcard
@@ -845,8 +849,13 @@ means of "D" lines.
         C: D    (b 3F444677CA)))
         C: END
         S: # session key follows
+        S: S PADDING 0
         S: D (value 1234567890ABCDEF0)
         S: OK descryption successful
+
+   The “PADDING” status line is only send if gpg-agent can tell
+what kind of padding is used.  As of now only the value 0 is used to
+indicate that the padding has been removed.
 
 
 File: gnupg.info,  Node: Agent PKSIGN,  Next: Agent GENKEY,  Prev: Agent PKDECRYPT,  Up: Agent Protocol
@@ -1066,7 +1075,7 @@ table:
      Replaced by a single `@'
 
 
-File: gnupg.info,  Node: Agent GET_PASSPHRASE,  Next: Agent GET_CONFIRMATION,  Prev: Agent ISTRUSTED,  Up: Agent Protocol
+File: gnupg.info,  Node: Agent GET_PASSPHRASE,  Next: Agent CLEAR_PASSPHRASE,  Prev: Agent ISTRUSTED,  Up: Agent Protocol
 
 2.6.7 Ask for a passphrase
 --------------------------
@@ -1119,9 +1128,19 @@ quality is shown.
 function returns with OK even when there is no cached passphrase.
 
 
-File: gnupg.info,  Node: Agent GET_CONFIRMATION,  Next: Agent HAVEKEY,  Prev: Agent GET_PASSPHRASE,  Up: Agent Protocol
+File: gnupg.info,  Node: Agent CLEAR_PASSPHRASE,  Next: Agent GET_CONFIRMATION,  Prev: Agent GET_PASSPHRASE,  Up: Agent Protocol
 
-2.6.8 Ask for confirmation
+2.6.8 Remove a cached passphrase
+--------------------------------
+
+Use this command to remove a cached passphrase.
+
+       CLEAR_PASSPHRASE <cache_id>
+
+
+File: gnupg.info,  Node: Agent GET_CONFIRMATION,  Next: Agent HAVEKEY,  Prev: Agent CLEAR_PASSPHRASE,  Up: Agent Protocol
+
+2.6.9 Ask for confirmation
 --------------------------
 
 This command may be used to ask for a simple confirmation by presenting
@@ -1140,8 +1159,8 @@ command.
 
 File: gnupg.info,  Node: Agent HAVEKEY,  Next: Agent LEARN,  Prev: Agent GET_CONFIRMATION,  Up: Agent Protocol
 
-2.6.9 Check whether a key is available
---------------------------------------
+2.6.10 Check whether a key is available
+---------------------------------------
 
 This can be used to see whether a secret key is available.  It does not
 return any information on whether the key is somehow protected.
@@ -1156,7 +1175,7 @@ least one of the keygrips corresponds to an available secret key.
 
 File: gnupg.info,  Node: Agent LEARN,  Next: Agent PASSWD,  Prev: Agent HAVEKEY,  Up: Agent Protocol
 
-2.6.10 Register a smartcard
+2.6.11 Register a smartcard
 ---------------------------
 
        LEARN [--send]
@@ -1167,7 +1186,7 @@ given the certificates are send back.
 
 File: gnupg.info,  Node: Agent PASSWD,  Next: Agent UPDATESTARTUPTTY,  Prev: Agent LEARN,  Up: Agent Protocol
 
-2.6.11 Change a Passphrase
+2.6.12 Change a Passphrase
 --------------------------
 
        PASSWD KEYGRIP
@@ -1178,7 +1197,7 @@ key identified by the hex string KEYGRIP.
 
 File: gnupg.info,  Node: Agent UPDATESTARTUPTTY,  Next: Agent GETEVENTCOUNTER,  Prev: Agent PASSWD,  Up: Agent Protocol
 
-2.6.12 Change the standard display
+2.6.13 Change the standard display
 ----------------------------------
 
        UPDATESTARTUPTTY
@@ -1191,7 +1210,7 @@ ssh-agent protocol to convey this information.
 
 File: gnupg.info,  Node: Agent GETEVENTCOUNTER,  Next: Agent GETINFO,  Prev: Agent UPDATESTARTUPTTY,  Up: Agent Protocol
 
-2.6.13 Get the Event Counters
+2.6.14 Get the Event Counters
 -----------------------------
 
        GETEVENTCOUNTER
@@ -1216,7 +1235,7 @@ detect a change.
 
 File: gnupg.info,  Node: Agent GETINFO,  Next: Agent OPTION,  Prev: Agent GETEVENTCOUNTER,  Up: Agent Protocol
 
-2.6.14 Return information about the process
+2.6.15 Return information about the process
 -------------------------------------------
 
 This is a multipurpose function to return a variety of information.
@@ -1241,7 +1260,7 @@ This is a multipurpose function to return a variety of information.
 
 File: gnupg.info,  Node: Agent OPTION,  Prev: Agent GETINFO,  Up: Agent Protocol
 
-2.6.15 Set options for the session
+2.6.16 Set options for the session
 ----------------------------------
 
 Here is a list of session options which are not yet described with
@@ -1429,6 +1448,14 @@ File: gnupg.info,  Node: Operational GPG Commands,  Next: OpenPGP Key Management
      a detached signature cannot read the signed material from STDIN
      without denoting it in the above way.
 
+     Note: When verifying a cleartext signature, `gpg' verifies only
+     what makes up the cleartext signed data and not any extra data
+     outside of the cleartext signature or header lines following
+     directly the dash marker line.  The option `--output' may be used
+     to write out the actual signed data; but there are other pitfalls
+     with this format as well.  It is suggested to avoid cleartext
+     signatures in favor of detached signatures.
+
 `--multifile'
      This modifies certain other commands to accept multiple files for
      processing on the command line or read from STDIN with each
@@ -1533,8 +1560,8 @@ File: gnupg.info,  Node: Operational GPG Commands,  Next: OpenPGP Key Management
      safeguard against accidental deletion of multiple keys.
 
 `--delete-secret-key `name''
-     Remove key from the secret and public keyring. In batch mode the
-     key must be specified by fingerprint.
+     Remove key from the secret keyring. In batch mode the key must be
+     specified by fingerprint.
 
 `--delete-secret-and-public-key `name''
      Same as `--delete-key', but if a secret key exists, it will be
@@ -1544,9 +1571,9 @@ File: gnupg.info,  Node: Operational GPG Commands,  Next: OpenPGP Key Management
 `--export'
      Either export all keys from all keyrings (default keyrings and
      those registered via option `--keyring'), or if at least one name
-     is given, those of the given name. The new keyring is written to
-     STDOUT or to the file given with option `--output'. Use together
-     with `--armor' to mail those keys.
+     is given, those of the given name. The exported keys are written
+     to STDOUT or to the file given with option `--output'.  Use
+     together with `--armor' to mail those keys.
 
 `--send-keys `key IDs''
      Similar to `--export' but sends the keys to a keyserver.
@@ -1558,13 +1585,25 @@ File: gnupg.info,  Node: Operational GPG Commands,  Next: OpenPGP Key Management
 
 `--export-secret-keys'
 `--export-secret-subkeys'
-     Same as `--export', but exports the secret keys instead.  This is
-     normally not very useful and a security risk.  The second form of
-     the command has the special property to render the secret part of
-     the primary key useless; this is a GNU extension to OpenPGP and
-     other implementations can not be expected to successfully import
-     such a key.  See the option `--simple-sk-checksum' if you want to
-     import such an exported key with an older OpenPGP implementation.
+     Same as `--export', but exports the secret keys instead.  The
+     exported keys are written to STDOUT or to the file given with
+     option `--output'.  This command is often used along with the
+     option `--armor' to allow easy printing of the key for paper
+     backup; however the external tool `paperkey' does a better job for
+     creating backups on paper.  Note that exporting a secret key can
+     be a security risk if the exported keys are send over an insecure
+     channel.
+
+     The second form of the command has the special property to render
+     the secret part of the primary key useless; this is a GNU
+     extension to OpenPGP and other implementations can not be expected
+     to successfully import such a key.  Its intended use is to
+     generated a full key with an additional signing subkey on a
+     dedicated machine and then using this command to export the key
+     without the primary key to the main machine.
+
+     See the option `--simple-sk-checksum' if you want to import an
+     exported secret key into ancient OpenPGP implementations.
 
 `--import'
 `--fast-import'
@@ -1988,7 +2027,9 @@ to change the default configuration.
 * GPG Key related Options::     Key related options.
 * GPG Input and Output::        Input and Output.
 * OpenPGP Options::             OpenPGP protocol specific options.
+* Compliance Options::          Compliance options.
 * GPG Esoteric Options::        Doing things one usually don't want to do.
+* Deprecated Options::          Deprecated options.
 
    Long options can be put in an options file (default
 "~/.gnupg/gpg.conf"). Short option names will not work - for example,
@@ -2184,9 +2225,10 @@ in the option file.
      image type (e.g. "jpg"), "%T" for the MIME type of the image (e.g.
      "image/jpeg"), "%v" for the single-character calculated validity
      of the image being viewed (e.g. "f"), "%V" for the calculated
-     validity as a string (e.g.  "full"), and "%%" for an actual
-     percent sign. If neither %i or %I are present, then the photo will
-     be supplied to the viewer on standard input.
+     validity as a string (e.g.  "full"), "%U" for a base32 encoded
+     hash of the user ID, and "%%" for an actual percent sign. If
+     neither %i or %I are present, then the photo will be supplied to
+     the viewer on standard input.
 
      The default viewer is "xloadimage -fork -quiet -title 'KeyID 0x%k'
      STDIN". Note that if your image viewer program is not secure, then
@@ -2376,7 +2418,8 @@ in the option file.
           some   external validation scheme. This option also
           suppresses the   "[uncertain]" tag printed with signature
           checks when there is no   evidence that the user ID is bound
-          to the key.
+          to the key.  Note that this   trust model still does not
+          allow the use of expired, revoked, or   disabled keys.
 
     auto
           Select the trust model depending on whatever the internal
@@ -2422,6 +2465,10 @@ in the option file.
           any of the   mechanisms defined by the `--auto-key-locate'
           are tried.  The   position of this mechanism in the list does
           not matter.  It is not   required if `local' is also used.
+
+    clear
+          Clear all defined mechanisms.  This is useful to override
+          mechanisms given in a config file.
 
 
 `--keyid-format `short|0xshort|long|0xlong''
@@ -2559,6 +2606,7 @@ in the option file.
           helper is   built with, this may actually be a directory or a
           file.
 
+
 `--completes-needed `n''
      Number of completely trusted users to introduce a new key signer
      (defaults to 1).
@@ -2612,6 +2660,12 @@ in the option file.
 
 `--gpg-agent-info'
      This is dummy option. It has no effect when used with `gpg2'.
+
+`--agent-program FILE'
+     Specify an agent program to be used for secret key operations.  The
+     default value is the `/usr/bin/gpg-agent'.  This is only used as a
+     fallback when the environment variable `GPG_AGENT_INFO' is not set
+     or a running agent cannot be connected.
 
 `--lock-once'
      Lock the databases the first time a lock is requested and do not
@@ -2910,7 +2964,7 @@ File: gnupg.info,  Node: GPG Input and Output,  Next: OpenPGP Options,  Prev: GP
 
 
 
-File: gnupg.info,  Node: OpenPGP Options,  Next: GPG Esoteric Options,  Prev: GPG Input and Output,  Up: GPG Options
+File: gnupg.info,  Node: OpenPGP Options,  Next: Compliance Options,  Prev: GPG Input and Output,  Up: GPG Options
 
 3.2.4 OpenPGP protocol specific options.
 ----------------------------------------
@@ -3008,6 +3062,9 @@ File: gnupg.info,  Node: OpenPGP Options,  Next: GPG Esoteric Options,  Prev: GP
      only meaningful if `--s2k-mode' is 3.
 
 
+
+File: gnupg.info,  Node: Compliance Options,  Next: GPG Esoteric Options,  Prev: OpenPGP Options,  Up: GPG Options
+
 3.2.5 Compliance options
 ------------------------
 
@@ -3051,9 +3108,9 @@ OPENPGP PROGRAMS section below before using one of these options.
      common baseline.
 
      This option implies `--rfc1991 --disable-mdc --no-force-v4-certs
-     --escape-from-lines --force-v3-sigs --cipher-algo IDEA
-     --digest-algo MD5 --compress-algo ZIP'. It also disables
-     `--textmode' when encrypting.
+     --escape-from-lines --force-v3-sigs --allow-weak-digest-algos
+     --cipher-algo IDEA --digest-algo MD5 --compress-algo ZIP'.  It
+     also disables `--textmode' when encrypting.
 
 `--pgp6'
      Set up all options to be as PGP 6 compliant as possible. This
@@ -3081,7 +3138,7 @@ OPENPGP PROGRAMS section below before using one of these options.
 
 
 
-File: gnupg.info,  Node: GPG Esoteric Options,  Prev: OpenPGP Options,  Up: GPG Options
+File: gnupg.info,  Node: GPG Esoteric Options,  Next: Deprecated Options,  Prev: Compliance Options,  Up: GPG Options
 
 3.2.6 Doing things one usually doesn't want to do.
 --------------------------------------------------
@@ -3187,8 +3244,12 @@ File: gnupg.info,  Node: GPG Esoteric Options,  Prev: OpenPGP Options,  Up: GPG 
 
 `--emit-version'
 `--no-emit-version'
-     Force inclusion of the version string in ASCII armored output.
-     `--no-emit-version' disables this option.
+     Force inclusion of the version string in ASCII armored output.  If
+     given once only the name of the program and the major number is
+     emitted (default), given twice the minor is also emitted, given
+     triple the micro is added, and given quad an operating system
+     identification is also emitted.  `--no-emit-version' disables the
+     version line.
 
 `--sig-notation `name=value''
 `--cert-notation `name=value''
@@ -3202,7 +3263,7 @@ File: gnupg.info,  Node: GPG Esoteric Options,  Prev: OpenPGP Options,  Up: GPG 
      may be any printable string; it will be encoded in UTF8, so you
      should check that your `--display-charset' is set correctly. If
      you prefix `name' with an exclamation mark (!), the notation data
-     will be flagged as critical (rfc2440:5.2.3.15). `--sig-notation'
+     will be flagged as critical (rfc4880:5.2.3.16). `--sig-notation'
      sets a notation for data signatures. `--cert-notation' sets a
      notation for key signatures (certifications). `--set-notation'
      sets both.
@@ -3223,7 +3284,7 @@ File: gnupg.info,  Node: GPG Esoteric Options,  Prev: OpenPGP Options,  Up: GPG 
 `--sig-policy-url `string''
 `--cert-policy-url `string''
 `--set-policy-url `string''
-     Use `string' as a Policy URL for signatures (rfc2440:5.2.3.19).  If
+     Use `string' as a Policy URL for signatures (rfc4880:5.2.3.20).  If
      you prefix it with an exclamation mark (!), the policy URL packet
      will be flagged as critical. `--sig-policy-url' sets a policy url
      for data signatures. `--cert-policy-url' sets a policy url for key
@@ -3426,6 +3487,11 @@ File: gnupg.info,  Node: GPG Esoteric Options,  Prev: OpenPGP Options,  Up: GPG 
      may also mean that the message was tampered with intentionally by
      an attacker.
 
+`--allow-weak-digest-algos'
+     Signatures made with the broken MD5 algorithm are normally rejected
+     with an "invalid digest algorithm" message.  This option allows the
+     verification of signatures made with such weak algorithms.
+
 `--no-default-keyring'
      Do not add the default keyrings to the list of keyrings. Note that
      GnuPG will not operate without any keyrings, so if you use this
@@ -3560,6 +3626,15 @@ File: gnupg.info,  Node: GPG Esoteric Options,  Prev: OpenPGP Options,  Up: GPG 
      a syntax check on the configuration file.
 
 
+   ---------- Footnotes ----------
+
+   (1) Using a little social engineering anyone who is able to decrypt
+the message can check whether one of the other recipients is the one he
+suspects.
+
+
+File: gnupg.info,  Node: Deprecated Options,  Prev: GPG Esoteric Options,  Up: GPG Options
+
 3.2.7 Deprecated options
 ------------------------
 
@@ -3597,12 +3672,6 @@ File: gnupg.info,  Node: GPG Esoteric Options,  Prev: OpenPGP Options,  Up: GPG 
      [no-]show-policy-url' instead.
 
 
-   ---------- Footnotes ----------
-
-   (1) Using a little social engineering anyone who is able to decrypt
-the message can check whether one of the other recipients is the one he
-suspects.
-
 
 File: gnupg.info,  Node: GPG Configuration,  Next: GPG Examples,  Prev: GPG Options,  Up: Invoking GPG
 
@@ -3618,7 +3687,7 @@ directory (*note option --homedir::).
      startup.  It may contain any valid long option; the leading two
      dashes   may not be entered and the option may not be abbreviated.
      This default   name may be changed on the command line (*note
-     option --options::).    You should backup this file.
+     gpg-option --options::).    You should backup this file.
 
 
    Note that on larger installations, it is useful to put predefined
@@ -3630,17 +3699,14 @@ helper script is provided to create these files (*note addgnupghome::).
 files; They all live in in the current home directory (*note option
 --homedir::).  Only the `gpg2' may modify these files.
 
-`~/.gnupg/secring.gpg'
-     The secret keyring.  You should backup this file.
-
-`~/.gnupg/secring.gpg.lock'
-     The lock file for the secret keyring.
-
 `~/.gnupg/pubring.gpg'
      The public keyring.  You should backup this file.
 
 `~/.gnupg/pubring.gpg.lock'
      The lock file for the public keyring.
+
+`~/.gnupg/secring.gpg'
+     The secret keyring.  You should backup this file.
 
 `~/.gnupg/trustdb.gpg'
      The trust database.  There is no need to backup this file; it is
@@ -3652,6 +3718,9 @@ files; They all live in in the current home directory (*note option
 
 `~/.gnupg/random_seed'
      A file used to preserve the state of the internal random pool.
+
+`~/.gnupg/secring.gpg.lock'
+     The lock file for the secret keyring.
 
 `/usr[/local]/share/gnupg/options.skel'
      The skeleton options file.
@@ -3669,7 +3738,7 @@ GNUPGHOME
      If set directory used instead of "~/.gnupg".
 
 GPG_AGENT_INFO
-     Used to locate the gpg-agent.      The value consists of 3 colon
+     Used to locate the gpg-agent.    The value consists of 3 colon
      delimited fields: The first is the path   to the Unix Domain
      Socket, the second the PID of the gpg-agent and the   protocol
      version which should be set to 1. When starting the gpg-agent   as
@@ -3822,8 +3891,8 @@ always required for this.
 
 File: gnupg.info,  Node: Unattended GPG key generation,  Up: Unattended Usage of GPG
 
-3.6 Unattended key generation
-=============================
+3.5.1 Unattended key generation
+-------------------------------
 
 The command `--gen-key' may be used along with the option `--batch' for
 unattended key generation.  The parameters are either read from stdin
@@ -3963,21 +4032,24 @@ Name-Email: EMAIL
 
 Expire-Date: ISO-DATE|(NUMBER[d|w|m|y])
      Set the expiration date for the key (and the subkey).  It may
-     either be entered in ISO date format (2000-08-15) or as number of
-     days, weeks, month or years.  The special notation "seconds=N" is
-     also allowed to directly give an Epoch value. Without a letter
-     days are assumed.  Note that there is no check done on the
-     overflow of the type used by OpenPGP for timestamps.  Thus you
-     better make sure that the given value make sense.  Although
-     OpenPGP works with time intervals, GnuPG uses an absolute value
-     internally and thus the last year we can represent is 2105.
+     either be entered in ISO date format (e.g. "20000815T145012") or
+     as number of days, weeks, month or years after the creation date.
+     The special notation "seconds=N" is also allowed to specify a
+     number of seconds since creation.  Without a letter days are
+     assumed.  Note that there is no check done on the overflow of the
+     type used by OpenPGP for timestamps.  Thus you better make sure
+     that the given value make sense.  Although OpenPGP works with time
+     intervals, GnuPG uses an absolute value internally and thus the
+     last year we can represent is 2105.
 
 Ceation-Date: ISO-DATE
      Set the creation date of the key as stored in the key information
      and which is also part of the fingerprint calculation.  Either a
      date like "1986-04-26" or a full timestamp like "19860426T042640"
-     may be used.  The time is considered to be UTC.  If it is not
-     given the current time is used.
+     may be used.  The time is considered to be UTC.  The special
+     notation "seconds=N" may be used to directly specify a the number
+     of seconds since Epoch (Unix time).  If it is not given the
+     current time is used.
 
 Preferences: STRING
      Set the cipher, hash, and compression preference values for this
@@ -4236,7 +4308,7 @@ File: gnupg.info,  Node: Certificate Management,  Prev: Operational GPGSM Comman
 
 `--export-secret-key-p12 KEY-ID'
      Export the private key and the certificate identified by KEY-ID in
-     a PKCS#12 format. When using along with the `--armor' option a few
+     a PKCS#12 format. When used with the `--armor' option a few
      informational lines are prepended to the output.  Note, that the
      PKCS#12 format is not very secure and this command is only
      provided if there is no other way to exchange the private key.
@@ -4659,8 +4731,8 @@ home directory (*note option --homedir::).
      This is the standard configuration file read by `gpgsm' on
      startup.  It may contain any valid long option; the leading two
      dashes may not be entered and the option may not be abbreviated.
-     This default name may be changed on the command line (*note option
-     --options::).  You should backup this file.
+     This default name may be changed on the command line (*note
+     gpgsm-option --options::).  You should backup this file.
 
 `policies.txt'
      This is a list of allowed CA policies.  This file should list the
@@ -4791,10 +4863,10 @@ but may also be used in the standard operation mode by using the
 * CSR and certificate creation::  CSR and certificate creation.
 
 
-File: gnupg.info,  Node: Automated signature checking,  Up: Unattended Usage
+File: gnupg.info,  Node: Automated signature checking,  Next: CSR and certificate creation,  Up: Unattended Usage
 
-4.6 Automated signature checking
-================================
+4.5.1 Automated signature checking
+----------------------------------
 
 It is very important to understand the semantics used with signature
 verification.  Checking a signature is not as simple as it may sound and
@@ -4836,10 +4908,10 @@ Error verifying a signature
 
 
 
-File: gnupg.info,  Node: CSR and certificate creation,  Up: Unattended Usage
+File: gnupg.info,  Node: CSR and certificate creation,  Prev: Automated signature checking,  Up: Unattended Usage
 
-4.7 CSR and certificate creation
-================================
+4.5.2 CSR and certificate creation
+----------------------------------
 
 *Please notice*: The immediate creation of certificates is only
 supported by GnuPG version 2.1 or later.  With a 2.0 version you may
@@ -4975,7 +5047,7 @@ Hash-Algo: HASH-ALGO
 
 File: gnupg.info,  Node: GPGSM Protocol,  Prev: Unattended Usage,  Up: Invoking GPGSM
 
-4.8 The Protocol the Server Mode Uses.
+4.6 The Protocol the Server Mode Uses.
 ======================================
 
 Description of the protocol used to access `GPGSM'.  `GPGSM' does
@@ -5005,7 +5077,7 @@ Assuan manual for details.
 
 File: gnupg.info,  Node: GPGSM ENCRYPT,  Next: GPGSM DECRYPT,  Up: GPGSM Protocol
 
-4.8.1 Encrypting a Message
+4.6.1 Encrypting a Message
 --------------------------
 
 Before encryption can be done the recipient must be set using the
@@ -5067,7 +5139,7 @@ closed.
 
 File: gnupg.info,  Node: GPGSM DECRYPT,  Next: GPGSM SIGN,  Prev: GPGSM ENCRYPT,  Up: GPGSM Protocol
 
-4.8.2 Decrypting a message
+4.6.2 Decrypting a message
 --------------------------
 
 Input and output FDs are set the same way as in encryption, but `INPUT'
@@ -5089,7 +5161,7 @@ this by requesting this from the user.
 
 File: gnupg.info,  Node: GPGSM SIGN,  Next: GPGSM VERIFY,  Prev: GPGSM DECRYPT,  Up: GPGSM Protocol
 
-4.8.3 Signing a Message
+4.6.3 Signing a Message
 -----------------------
 
 Signing is usually done with these commands:
@@ -5128,7 +5200,7 @@ signers which is in contrats to the `RECIPIENT' command.
 
 File: gnupg.info,  Node: GPGSM VERIFY,  Next: GPGSM GENKEY,  Prev: GPGSM SIGN,  Up: GPGSM Protocol
 
-4.8.4 Verifying a Message
+4.6.4 Verifying a Message
 -------------------------
 
 To verify a mesage the command:
@@ -5144,7 +5216,7 @@ client must provide it.
 
 File: gnupg.info,  Node: GPGSM GENKEY,  Next: GPGSM LISTKEYS,  Prev: GPGSM VERIFY,  Up: GPGSM Protocol
 
-4.8.5 Generating a Key
+4.6.5 Generating a Key
 ----------------------
 
 This is used to generate a new keypair, store the secret part in the
@@ -5172,7 +5244,7 @@ Status lines may be issued as a progress indicator.
 
 File: gnupg.info,  Node: GPGSM LISTKEYS,  Next: GPGSM EXPORT,  Prev: GPGSM GENKEY,  Up: GPGSM Protocol
 
-4.8.6 List available keys
+4.6.6 List available keys
 -------------------------
 
 To list the keys in the internal database or using an external key
@@ -5211,7 +5283,7 @@ are done.
 
 File: gnupg.info,  Node: GPGSM EXPORT,  Next: GPGSM IMPORT,  Prev: GPGSM LISTKEYS,  Up: GPGSM Protocol
 
-4.8.7 Export certificates
+4.6.7 Export certificates
 -------------------------
 
 To export certificate from the internal key database the command:
@@ -5235,7 +5307,7 @@ command.
 
 File: gnupg.info,  Node: GPGSM IMPORT,  Next: GPGSM DELETE,  Prev: GPGSM EXPORT,  Up: GPGSM Protocol
 
-4.8.8 Import certificates
+4.6.8 Import certificates
 -------------------------
 
 To import certificates into the internal key database, the command
@@ -5255,7 +5327,7 @@ removing their ephemeral flag.
 
 File: gnupg.info,  Node: GPGSM DELETE,  Next: GPGSM GETINFO,  Prev: GPGSM IMPORT,  Up: GPGSM Protocol
 
-4.8.9 Delete certificates
+4.6.9 Delete certificates
 -------------------------
 
 To delete a certificate the command
@@ -5272,7 +5344,7 @@ is returned.
 
 File: gnupg.info,  Node: GPGSM GETINFO,  Prev: GPGSM DELETE,  Up: GPGSM Protocol
 
-4.8.10 Return information about the process
+4.6.10 Return information about the process
 -------------------------------------------
 
 This is a multipurpose function to return a variety of information.
@@ -5529,8 +5601,16 @@ File: gnupg.info,  Node: Scdaemon Options,  Next: Card applications,  Prev: Scda
      down immediately at the next timer tick for any value of N other
      than 0.
 
-`--disable-keypad'
-     Even if a card reader features a keypad, do not try to use it.
+`--enable-pinpad-varlen'
+     Please specify this option when the card reader supports variable
+     length input for pinpad (default is no).  For known readers
+     (listed in ccid-driver.c and apdu.c), this option is not needed.
+     Note that if your card reader doesn't supports variable length
+     input but you want to use it, you need to specify your pinpad
+     request on your card.
+
+`--disable-pinpad'
+     Even if a card reader features a pinpad, do not try to use it.
 
 `--deny-admin'
      This option disables the use of admin class commands for card
@@ -5816,6 +5896,11 @@ command
        PKDECRYPT KEYID
 
    where KEYID is the hexified ID of the key to be used.
+
+   If the card is ware of the apdding format a status line with padding
+information is send before the plaintext data.  The key for this status
+line is `PADDING' with the only defined value being 0 and meaning
+padding has been removed.
 
 
 File: gnupg.info,  Node: Scdaemon GETATTR,  Next: Scdaemon SETATTR,  Prev: Scdaemon PKDECRYPT,  Up: Scdaemon Protocol
@@ -6371,12 +6456,6 @@ One of the following commands must be given:
      Reload all or the given component. This is basically the same as
      sending a SIGHUP to the component.  Components which don't support
      reloading are ignored.
-
-`--kill [COMPONENT]'
-     Kill the given component.  Components which support killing are
-     gpg-agent and scdaemon.  Components which don't support reloading
-     are ignored.  Note that as of now reload and kill have the same
-     effect for scdaemon.
 
 
    The following options may be used:
@@ -6994,8 +7073,9 @@ startup.
    Passphrases set with this utility don't expire unless the `--forget'
 option is used to explicitly clear them from the cache -- or
 `gpg-agent' is either restarted or reloaded (by sending a SIGHUP to
-it).  It is necessary to allow this passphrase presetting by starting
-`gpg-agent' with the `--allow-preset-passphrase'.
+it).  Nite that the maximum cache time as set with `--max-cache-ttl' is
+still honored.  It is necessary to allow this passphrase presetting by
+starting `gpg-agent' with the `--allow-preset-passphrase'.
 
 * Menu:
 
@@ -7520,233 +7600,4 @@ This is a collection of small howto documents.
 * Menu:
 
 * Howto Create a Server Cert::  Creating a TLS server certificate.
-
-
-File: gnupg.info,  Node: Howto Create a Server Cert,  Up: Howtos
-
-8.1 Creating a TLS server certificate
-=====================================
-
-Here is a brief run up on how to create a server certificate. It has
-actually been done this way to get a certificate from CAcert to be used
-on a real server.  It has only been tested with this CA, but there
-shouldn't be any problem to run this against any other CA.
-
-   Before you start, make sure that gpg-agent is running.  As there is
-no need for a configuration file, you may simply enter:
-
-       $ gpgsm-gencert.sh >a.p10
-       Key type
-        [1] RSA
-        [2] Existing key
-        [3] Direct from card
-       Your selection: 1
-       You selected: RSA
-
-   I opted for creating a new RSA key. The other option is to use an
-already existing key, by selecting `2' and entering the so-called
-keygrip.  Running the command `gpgsm --dump-secret-key USERID' shows
-you this keygrip.  Using `3' offers another menu to create a
-certificate directly from a smart card based key.
-
-   Let's continue:
-
-       Key length
-        [1] 1024
-        [2] 2048
-       Your selection: 1
-       You selected: 1024
-
-   The script offers  two common key sizes. With the current setup of
-CAcert, it does not make much sense to use a 2k key; their policies need
-to be revised anyway (a CA root key valid for 30 years is not really
-serious).
-
-       Key usage
-        [1] sign, encrypt
-        [2] sign
-        [3] encrypt
-       Your selection: 1
-       You selected: sign, encrypt
-
-   We want to sign and encrypt using this key. This is just a suggestion
-and the CA may actually assign other key capabilities.
-
-   Now for some real data:
-
-       Name (DN)
-       > CN=kerckhoffs.g10code.com
-
-   This is the most important value for a server certificate. Enter here
-the canonical name of your server machine. You may add other virtual
-server names later.
-
-       E-Mail addresses (end with an empty line)
-       >
-
-   We don't need email addresses in a server certificate and CAcert
-would anyway ignore such a request. Thus just hit enter.
-
-   If you want to create a client certificate for email encryption, this
-would be the place to enter your mail address (e.g. <joe@example.org>).
-You may enter as many addresses as you like, however the CA may not
-accept them all or reject the entire request.
-
-       DNS Names (optional; end with an empty line)
-       > www.g10code.com
-       DNS Names (optional; end with an empty line)
-       > ftp.g10code.com
-       DNS Names (optional; end with an empty line)
-       >
-
-   Here I entered the names of the servers which actually run on the
-machine given in the DN above. The browser will accept a certificate for
-any of these names. As usual the CA must approve all of these names.
-
-       URIs (optional; end with an empty line)
-       >
-
-   It is possible to insert arbitrary URIs into a certificate; for a
-server certificate this does not make sense.
-
-   We have now entered all required information and `gpgsm' will
-display what it has gathered and ask whether to create the certificate
-request:
-
-       Parameters for certificate request to create:
-            1	Key-Type: RSA
-            2	Key-Length: 1024
-            3	Key-Usage: sign, encrypt
-            4	Name-DN: CN=kerckhoffs.g10code.com
-            5	Name-DNS: www.g10code.com
-            6	Name-DNS: ftp.g10code.com
-
-       Really create such a CSR?
-        [1] yes
-        [2] no
-       Your selection: 1
-       You selected: yes
-
-   `gpgsm' will now start working on creating the request. As this
-includes the creation of an RSA key it may take a while. During this
-time you will be asked 3 times for a passphrase to protect the created
-private key on your system. A pop up window will appear to ask for it.
-The first two prompts are for the new passphrase and for re-entering it;
-the third one is required to actually create the certificate signing
-request.
-
-   When it is ready, you should see the final notice:
-
-       gpgsm: certificate request created
-
-   Now, you may look at the created request:
-
-       $ cat a.p10
-       -----BEGIN CERTIFICATE REQUEST-----
-       MIIBnzCCAQgCAQAwITEfMB0GA1UEAxMWa2VyY2tob2Zmcy5nMTBjb2RlLmNvbTCB
-       nzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA5h+uKRenpvbe+BnMY6siPO50LVyg
-       HtB7kr+YISlPJ5JAFO12yQFz9Y0sBLHbjR+V+TOawwP1dZhGjlgnEBkMdWKuEBlS
-       wFTALLX78GAyvAYAmPqSPDEYXkMECyUXVX/bbGI1bY8Y2OGy4w4D+v7e+xD2NBkm
-       Bj5cNy+YMbGVldECAwEAAaA+MDwGCSqGSIb3DQEJDjEvMC0wKwYDVR0RBCQwIoIP
-       d3d3LmcxMGNvZGUuY29tgg9mdHAuZzEwY29kZS5jb20wDQYJKoZIhvcNAQEFBQAD
-       gYEAzBRIi8KTfKyebOlMtDN6oDYBOv+r9A4w3u/Z1ikjffaiN1Bmd2o9Ez9KXKHA
-       IezLeSEA/rGUPN5Ur5qIJnRNQ8xrS+iLftr8msWQSZppVnA/vnqMrtqBUpitqAr0
-       eYBmt1Uem2Y3UFABrKPglv2xzgGkrKX6AqmFoOnJWQ0QcTw=
-       -----END CERTIFICATE REQUEST-----
-       $
-
-   You may now proceed by logging into your account at the CAcert
-website, choose `Server Certificates - New', check `sign by class 3 root
-certificate', paste the above request block into the text field and
-click on `Submit'.
-
-   If everything works out fine, a certificate will be shown. Now run
-
-     $ gpgsm --import
-
-   and paste the certificate from the CAcert page into your terminal
-followed by a Ctrl-D
-
-       -----BEGIN CERTIFICATE-----
-       MIIEIjCCAgqgAwIBAgIBTDANBgkqhkiG9w0BAQQFADBUMRQwEgYDVQQKEwtDQWNl
-       cnQgSW5jLjEeMBwGA1UECxMVaHR0cDovL3d3dy5DQWNlcnQub3JnMRwwGgYDVQQD
-       ExNDQWNlcnQgQ2xhc3MgMyBSb290MB4XDTA1MTAyODE2MjA1MVoXDTA3MTAyODE2
-       MjA1MVowITEfMB0GA1UEAxMWa2VyY2tob2Zmcy5nMTBjb2RlLmNvbTCBnzANBgkq
-       hkiG9w0BAQEFAAOBjQAwgYkCgYEA5h+uKRenpvbe+BnMY6siPO50LVygHtB7kr+Y
-       ISlPJ5JAFO12yQFz9Y0sBLHbjR+V+TOawwP1dZhGjlgnEBkMdWKuEBlSwFTALLX7
-       8GAyvAYAmPqSPDEYXkMECyUXVX/bbGI1bY8Y2OGy4w4D+v7e+xD2NBkmBj5cNy+Y
-       MbGVldECAwEAAaOBtTCBsjAMBgNVHRMBAf8EAjAAMDQGA1UdJQQtMCsGCCsGAQUF
-       BwMCBggrBgEFBQcDAQYJYIZIAYb4QgQBBgorBgEEAYI3CgMDMAsGA1UdDwQEAwIF
-       oDAyBggrBgEFBQcBAQQmMCQwIgYIKwYBBQUHMAGGFmh0dHA6Ly9vY3NwLmNhY2Vy
-       dC5vcmcwKwYDVR0RBCQwIoIPd3d3LmcxMGNvZGUuY29tgg9mdHAuZzEwY29kZS5j
-       b20wDQYJKoZIhvcNAQEEBQADggIBAAj5XAHCtzQR8PV6PkQBgZqUCbcfxGO/ZIp9
-       aIT6J2z0Jo1OZI6KmConbqnZG9WyDlV5P7msQXW/Z9nBfoj4KSmNR8G/wtb8ClJn
-       W8s75+K3ZLq1UgEyxBDrS7GjtbVaj7gsfZsuiQzxmk9lbl1gbkpJ3VEMjwVCTMlM
-       fpjp8etyPhUZqOZaoKVaq//KTOsjhPMwz7TcfOkHvXketPrWTcefJQU7NKLH16D3
-       mZAwnBxp3P51H6E6VG8AoJO8xCBuVwsbXKEf/FW+tmKG9pog6CaZQ9WibROTtnKj
-       NJjSBsrUk5C+JowO/EyZRGm6R1tlok8iFXj+2aimyeBqDcxozNmFgh9F3S5u0wK0
-       6cfYgkPVMHxgwV3f3Qh+tJkgLExN7KfO9hvpZqAh+CLQtxVmvpxEVEXKR6nwBI5U
-       BaseulvVy3wUfg2daPkG17kDDBzQlsWC0BRF8anH+FWSrvseC3nS0a9g3sXF1Ic3
-       gIqeAMhkant1Ac3RR6YCWtJKr2rcQNdDAxXK35/gUSQNCi9dclEzoOgjziuA1Mha
-       94jYcvGKcwThn0iITVS5hOsCfaySBLxTzfIruLbPxXlpWuCW/6I/7YyivppKgEZU
-       rUTFlNElRXCwIl0YcJkIaYYqWf7+A/aqYJCi8+51usZwMy3Jsq3hJ6MA3h1BgwZs
-       Rtct3tIX
-       -----END CERTIFICATE-----
-       gpgsm: issuer certificate (#/CN=CAcert Class 3 Ro[...]) not found
-       gpgsm: certificate imported
-
-       gpgsm: total number processed: 1
-       gpgsm:               imported: 1
-
-   gpgsm tells you that it has imported the certificate. It is now
-associated with the key you used when creating the request. The root
-certificate has not been found, so you may want to import it from the
-CACert website.
-
-   To see the content of your certificate, you may now enter:
-
-       $ gpgsm -K kerckhoffs.g10code.com
-       /home/foo/.gnupg/pubring.kbx
-       ---------------------------
-       Serial number: 4C
-              Issuer: /CN=CAcert Class 3 Root/OU=http:\x2f\x2fwww.[...]
-             Subject: /CN=kerckhoffs.g10code.com
-                 aka: (dns-name www.g10code.com)
-                 aka: (dns-name ftp.g10code.com)
-            validity: 2005-10-28 16:20:51 through 2007-10-28 16:20:51
-            key type: 1024 bit RSA
-           key usage: digitalSignature keyEncipherment
-       ext key usage: clientAuth (suggested), serverAuth (suggested), [...]
-         fingerprint: 0F:9C:27:B2:DA:05:5F:CB:33:19:D8:E9:65:B9:BD:4F:B1:98:CC:57
-
-   I used `-K' above because this will only list certificates for which
-a private key is available.  To see more details, you may use
-`--dump-secret-keys' instead of `-K'.
-
-   To make actual use of the certificate you need to install it on your
-server. Server software usually expects a PKCS\#12 file with key and
-certificate. To create such a file, run:
-
-       $ gpgsm --export-secret-key-p12 -a >kerckhoffs-cert.pem
-
-   You will be asked for the passphrase as well as for a new passphrase
-to be used to protect the PKCS\#12 file. The file now contains the
-certificate as well as the private key:
-
-       $ cat kerckhoffs-cert.pem
-       Issuer ...: /CN=CAcert Class 3 Root/OU=http:\x2f\x2fwww.CA[...]
-       Serial ...: 4C
-       Subject ..: /CN=kerckhoffs.g10code.com
-           aka ..: (dns-name www.g10code.com)
-           aka ..: (dns-name ftp.g10code.com)
-
-       -----BEGIN PKCS12-----
-       MIIHlwIBAzCCB5AGCSqGSIb37QdHAaCCB4EEggd9MIIHeTk1BJ8GCSqGSIb3DQEu
-       [...many more lines...]
-       -----END PKCS12-----
-       $
-
-   Copy this file in a secure way to the server, install it there and
-delete the file then. You may export the file again at any time as long
-as it is available in GnuPG's private key database.
 

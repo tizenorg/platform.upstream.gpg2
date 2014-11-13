@@ -65,6 +65,12 @@
 
 static int verbose;
 
+#if defined(__APPLE__) || defined(_WIN32) || defined(__CYGWIN__)
+typedef unsigned int pcsc_dword_t;
+#else
+typedef unsigned long pcsc_dword_t;
+#endif
+
 
 /* PC/SC constants and function pointer. */
 #define PCSC_SCOPE_USER      0
@@ -112,15 +118,23 @@ struct pcsc_io_request_s {
 
 typedef struct pcsc_io_request_s *pcsc_io_request_t;
 
+#ifdef __APPLE__
+#pragma pack(1)
+#endif
+
 struct pcsc_readerstate_s
 {
   const char *reader;
   void *user_data;
-  unsigned long current_state;
-  unsigned long event_state;
-  unsigned long atrlen;
+  pcsc_dword_t current_state;
+  pcsc_dword_t event_state;
+  pcsc_dword_t atrlen;
   unsigned char atr[33];
 };
+
+#ifdef __APPLE__
+#pragma pack()
+#endif
 
 typedef struct pcsc_readerstate_s *pcsc_readerstate_t;
 
@@ -129,55 +143,62 @@ static int driver_is_open;     /* True if the PC/SC driver has been
                                   initialzied and is ready for
                                   operations.  The following variables
                                   are then valid. */
-static unsigned long pcsc_context;  /* The current PC/CS context. */
+static long pcsc_context;  /* The current PC/CS context. */
 static char *current_rdrname;
-static unsigned long pcsc_card;
-static unsigned long pcsc_protocol;
+static long pcsc_card;
+static pcsc_dword_t pcsc_protocol;
 static unsigned char current_atr[33];
 static size_t current_atrlen;
 
-long (* pcsc_establish_context) (unsigned long scope,
+long (* pcsc_establish_context) (pcsc_dword_t scope,
                                  const void *reserved1,
                                  const void *reserved2,
-                                 unsigned long *r_context);
-long (* pcsc_release_context) (unsigned long context);
-long (* pcsc_list_readers) (unsigned long context,
+                                 long *r_context);
+long (* pcsc_release_context) (long context);
+long (* pcsc_list_readers) (long context,
                             const char *groups,
-                            char *readers, unsigned long*readerslen);
-long (* pcsc_get_status_change) (unsigned long context,
-                                 unsigned long timeout,
+                            char *readers, pcsc_dword_t *readerslen);
+long (* pcsc_get_status_change) (long context,
+                                 pcsc_dword_t timeout,
                                  pcsc_readerstate_t readerstates,
-                                 unsigned long nreaderstates);
-long (* pcsc_connect) (unsigned long context,
+                                 pcsc_dword_t nreaderstates);
+long (* pcsc_connect) (long context,
                        const char *reader,
-                       unsigned long share_mode,
-                       unsigned long preferred_protocols,
-                       unsigned long *r_card,
-                       unsigned long *r_active_protocol);
-long (* pcsc_reconnect) (unsigned long card,
-                         unsigned long share_mode,
-                         unsigned long preferred_protocols,
-                         unsigned long initialization,
-                         unsigned long *r_active_protocol);
-long (* pcsc_disconnect) (unsigned long card,
-                          unsigned long disposition);
-long (* pcsc_status) (unsigned long card,
-                      char *reader, unsigned long *readerlen,
-                      unsigned long *r_state,
-                      unsigned long *r_protocol,
-                      unsigned char *atr, unsigned long *atrlen);
-long (* pcsc_begin_transaction) (unsigned long card);
-long (* pcsc_end_transaction) (unsigned long card,
-                               unsigned long disposition);
-long (* pcsc_transmit) (unsigned long card,
+                       pcsc_dword_t share_mode,
+                       pcsc_dword_t preferred_protocols,
+                       long *r_card,
+                       pcsc_dword_t *r_active_protocol);
+long (* pcsc_reconnect) (long card,
+                         pcsc_dword_t share_mode,
+                         pcsc_dword_t preferred_protocols,
+                         pcsc_dword_t initialization,
+                         pcsc_dword_t *r_active_protocol);
+long (* pcsc_disconnect) (long card,
+                          pcsc_dword_t disposition);
+long (* pcsc_status) (long card,
+                      char *reader, pcsc_dword_t *readerlen,
+                      pcsc_dword_t *r_state,
+                      pcsc_dword_t *r_protocol,
+                      unsigned char *atr, pcsc_dword_t *atrlen);
+long (* pcsc_begin_transaction) (long card);
+long (* pcsc_end_transaction) (long card,
+                               pcsc_dword_t disposition);
+long (* pcsc_transmit) (long card,
                         const pcsc_io_request_t send_pci,
                         const unsigned char *send_buffer,
-                        unsigned long send_len,
+                        pcsc_dword_t send_len,
                         pcsc_io_request_t recv_pci,
                         unsigned char *recv_buffer,
-                        unsigned long *recv_len);
-long (* pcsc_set_timeout) (unsigned long context,
-                           unsigned long timeout);
+                        pcsc_dword_t *recv_len);
+long (* pcsc_set_timeout) (long context,
+                           pcsc_dword_t timeout);
+long (* pcsc_control) (long card,
+                       pcsc_dword_t control_code,
+                       const void *send_buffer,
+                       pcsc_dword_t send_len,
+                       void *recv_buffer,
+                       pcsc_dword_t recv_len,
+                       pcsc_dword_t *bytes_returned);
 
 
 
@@ -335,6 +356,7 @@ load_pcsc_driver (const char *libname)
   pcsc_end_transaction   = dlsym (handle, "SCardEndTransaction");
   pcsc_transmit          = dlsym (handle, "SCardTransmit");
   pcsc_set_timeout       = dlsym (handle, "SCardSetTimeout");
+  pcsc_control           = dlsym (handle, "SCardControl");
 
   if (!pcsc_establish_context
       || !pcsc_release_context
@@ -347,13 +369,14 @@ load_pcsc_driver (const char *libname)
       || !pcsc_begin_transaction
       || !pcsc_end_transaction
       || !pcsc_transmit
+      || !pcsc_control
       /* || !pcsc_set_timeout */)
     {
       /* Note that set_timeout is currently not used and also not
          available under Windows. */
       fprintf (stderr,
                "apdu_open_reader: invalid PC/SC driver "
-               "(%d%d%d%d%d%d%d%d%d%d%d%d)\n",
+               "(%d%d%d%d%d%d%d%d%d%d%d%d%d)\n",
                !!pcsc_establish_context,
                !!pcsc_release_context,
                !!pcsc_list_readers,
@@ -365,7 +388,8 @@ load_pcsc_driver (const char *libname)
                !!pcsc_begin_transaction,
                !!pcsc_end_transaction,
                !!pcsc_transmit,
-               !!pcsc_set_timeout );
+               !!pcsc_set_timeout,
+               !!pcsc_control );
       dlclose (handle);
       exit (1);
     }
@@ -384,9 +408,9 @@ handle_open (unsigned char *argbuf, size_t arglen)
   long err;
   const char * portstr;
   char *list = NULL;
-  unsigned long nreader, atrlen;
+  pcsc_dword_t nreader, atrlen;
   char *p;
-  unsigned long card_state, card_protocol;
+  pcsc_dword_t card_state, card_protocol;
   unsigned char atr[33];
 
   /* Make sure there is only the port string */
@@ -482,7 +506,7 @@ handle_open (unsigned char *argbuf, size_t arglen)
   if (!err)
     {
       char reader[250];
-      unsigned long readerlen;
+      pcsc_dword_t readerlen;
 
       atrlen = 33;
       readerlen = sizeof reader -1;
@@ -578,9 +602,11 @@ handle_status (unsigned char *argbuf, size_t arglen)
   if ( !(rdrstates[0].event_state & PCSC_STATE_UNKNOWN) )
     {
       if ( (rdrstates[0].event_state & PCSC_STATE_PRESENT) )
-        status |= 2;
-      if ( !(rdrstates[0].event_state & PCSC_STATE_MUTE) )
-        status |= 4;
+	{
+	  status |= 2;
+	  if ( !(rdrstates[0].event_state & PCSC_STATE_MUTE) )
+	    status |= 4;
+	}
       /* We indicate a useful card if it is not in use by another
          application.  This is because we only use exclusive access
          mode.  */
@@ -616,8 +642,8 @@ handle_reset (unsigned char *argbuf, size_t arglen)
 {
   long err;
   char reader[250];
-  unsigned long nreader, atrlen;
-  unsigned long card_state, card_protocol;
+  pcsc_dword_t nreader, atrlen;
+  pcsc_dword_t card_state, card_protocol;
 
   (void)argbuf;
   (void)arglen;
@@ -687,8 +713,8 @@ handle_transmit (unsigned char *argbuf, size_t arglen)
 {
   long err;
   struct pcsc_io_request_s send_pci;
-  unsigned long recv_len;
-  unsigned char buffer[1024];
+  pcsc_dword_t recv_len;
+  unsigned char buffer[4096];
 
   /* The apdu should at least be one byte. */
   if (!arglen)
@@ -719,6 +745,38 @@ handle_transmit (unsigned char *argbuf, size_t arglen)
   request_succeeded (buffer, recv_len);
 }
 
+
+/* Handle a control request.  The argument is expected to be a buffer
+   which contains CONTROL_CODE (4-byte) and INPUT_BYTES.
+ */
+static void
+handle_control (unsigned char *argbuf, size_t arglen)
+{
+  long err;
+  pcsc_dword_t ioctl_code;
+  pcsc_dword_t recv_len = 1024;
+  unsigned char buffer[1024];
+
+  if (arglen < 4)
+    bad_request ("CONTROL");
+
+  ioctl_code = (argbuf[0] << 24) | (argbuf[1] << 16) | (argbuf[2] << 8) | argbuf[3];
+  argbuf += 4;
+  arglen -= 4;
+
+  recv_len = sizeof (buffer);
+  err = pcsc_control (pcsc_card, ioctl_code, argbuf, arglen,
+                      buffer, recv_len, &recv_len);
+  if (err)
+    {
+      if (verbose)
+        fprintf (stderr, PGM": pcsc_control failed: %s (0x%lx)\n",
+                 pcsc_error_string (err), err);
+      request_failed (err);
+      return;
+    }
+  request_succeeded (buffer, recv_len);
+}
 
 
 static void
@@ -829,6 +887,10 @@ main (int argc, char **argv)
 
         case 5:
           handle_reset (argbuffer, arglen);
+          break;
+
+        case 6:
+          handle_control (argbuffer, arglen);
           break;
 
         default:

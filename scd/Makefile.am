@@ -17,19 +17,24 @@
 
 ## Process this file with automake to produce Makefile.in
 
-bin_PROGRAMS = scdaemon
-if ! HAVE_W32_SYSTEM
-libexec_PROGRAMS = gnupg-pcsc-wrapper
+if HAVE_W32_SYSTEM
+libexec_PROGRAMS = scdaemon
+else
+libexec_PROGRAMS = scdaemon gnupg-pcsc-wrapper
 endif
 
-EXTRA_DIST = ChangeLog-2011
+EXTRA_DIST = ChangeLog-2011 scdaemon-w32info.rc
 
 AM_CPPFLAGS = -I$(top_srcdir)/gl -I$(top_srcdir)/intl -I$(top_srcdir)/common
 
 include $(top_srcdir)/am/cmacros.am
 
-AM_CFLAGS =  $(LIBGCRYPT_CFLAGS) \
-	     $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS) $(PTH_CFLAGS)
+if HAVE_W32_SYSTEM
+resource_objs += scdaemon-w32info.o
+endif
+
+AM_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) \
+	    $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS) $(PTH_CFLAGS)
 
 
 card_apps = app-openpgp.c app-nks.c app-dinsig.c app-p15.c app-geldkarte.c
@@ -46,7 +51,7 @@ scdaemon_SOURCES = \
 scdaemon_LDADD = $(libcommonpth) ../jnlib/libjnlib.a ../gl/libgnu.a \
 	$(LIBGCRYPT_LIBS) $(KSBA_LIBS) $(LIBASSUAN_LIBS) $(PTH_LIBS) \
 	$(LIBUSB_LIBS) $(GPG_ERROR_LIBS) \
-        $(LIBINTL) $(DL_LIBS) $(NETLIBS) $(LIBICONV)
+        $(LIBINTL) $(DL_LIBS) $(NETLIBS) $(LIBICONV) $(resource_objs)
 
 # Removed for now: We need to decide whether it makes sense to
 # continue it at all, given that gpg has now all required
