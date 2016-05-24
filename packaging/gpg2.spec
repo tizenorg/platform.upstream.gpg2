@@ -36,10 +36,11 @@ gpg-agent, and a keybox library.
 cp %{SOURCE1001} .
 
 %build
+%restore_fcommon
 %autogen
 # build PIEs (position independent executables) for address space randomisation:
 PIE="-fpie"
-export CFLAGS="%{optflags} ${PIE}"
+export CFLAGS="%{optflags} ${PIE} "
 export LDFLAGS=-pie
 %configure \
     --libexecdir=%{_libdir} \
