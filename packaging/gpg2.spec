@@ -11,7 +11,6 @@ BuildRequires:  automake
 BuildRequires:  expect
 BuildRequires:  fdupes
 BuildRequires:  gettext-tools
-BuildRequires:  libadns-devel
 BuildRequires:  libassuan-devel >= 2.0.0
 BuildRequires:  libcurl-devel >= 7.10
 BuildRequires:  libgcrypt-devel >= 1.4.0
